@@ -97,6 +97,9 @@ class LivePipeline:
         triggered_sides = self.punch_detector.check(feats)
 
         for side in triggered_sides:
+            # Score peak swing velocity, not the instantaneous value at the
+            # trigger frame (full extension = the arm has stopped moving).
+            feats.wrist_angular_velocity_dps[side] = self.feature_tracker.pop_peak_velocity(side)
             result = score_punch(feats, self.cfg, side)
             self._last_scores[side] = result.composite
             self._last_sub_scores[side] = result.sub_scores

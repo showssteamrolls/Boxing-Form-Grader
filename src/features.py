@@ -82,10 +82,25 @@ class FeatureTracker:
     def __init__(self):
         self._prev_wrist_xy: dict[str, Optional[np.ndarray]] = {"left": None, "right": None}
         self._prev_timestamp_ms: Optional[float] = None
+        # Running max velocity since the last pop_peak_velocity() call, per
+        # side. Detection now fires on extension (the END of a swing, where
+        # the arm has stopped moving and instantaneous velocity is near
+        # zero), so callers that want "how fast was this punch" need the
+        # peak reached during the swing, not the value at the trigger frame.
+        self._peak_velocity: dict[str, float] = {"left": 0.0, "right": 0.0}
 
     def reset(self) -> None:
         self._prev_wrist_xy = {"left": None, "right": None}
         self._prev_timestamp_ms = None
+        self._peak_velocity = {"left": 0.0, "right": 0.0}
+
+    def pop_peak_velocity(self, side: str) -> float:
+        """Returns the max wrist angular velocity seen for `side` since the
+        last call, then resets that side's peak to 0.0. Call this when a
+        punch is detected to get the swing's actual peak speed."""
+        value = self._peak_velocity[side]
+        self._peak_velocity[side] = 0.0
+        return value
 
     def update(self, landmarks_xy: np.ndarray, timestamp_ms: float) -> FrameFeatures:
         elbow_extension = {
@@ -96,6 +111,8 @@ class FeatureTracker:
         }
         hip_rotation = _hip_rotation(landmarks_xy)
         angular_velocity = self._wrist_angular_velocity(landmarks_xy, timestamp_ms)
+        for side in ("left", "right"):
+            self._peak_velocity[side] = max(self._peak_velocity[side], angular_velocity[side])
 
         self._prev_timestamp_ms = timestamp_ms
         return FrameFeatures(
