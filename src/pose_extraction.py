@@ -140,11 +140,11 @@ class PoseExtractor:
                 continue
             pa = (int(pts[a][0] * w), int(pts[a][1] * h))
             pb = (int(pts[b][0] * w), int(pts[b][1] * h))
-            cv2.line(frame_bgr, pa, pb, (255, 255, 255), 2)
+            cv2.line(frame_bgr, pa, pb, (235, 206, 135), 2)  # sky blue (BGR)
         for i, (x, y) in enumerate(pts):
             if vis[i] < 0.3:
                 continue
-            cv2.circle(frame_bgr, (int(x * w), int(y * h)), 3, (0, 220, 255), -1)
+            cv2.circle(frame_bgr, (int(x * w), int(y * h)), 3, (255, 0, 255), -1)  # magenta (BGR)
 
     def close(self) -> None:
         self._landmarker.close()
