@@ -59,14 +59,21 @@ def score_punch(features: FrameFeatures, cfg: dict, side: str) -> PunchScore:
 class PunchDetector:
     """Flags a punch on the rising edge of elbow extension (not velocity —
     velocity is noisiest exactly when a punch starts, since the shoulder-
-    wrist vector is short near the guard). Debounced so one punch isn't
-    counted on consecutive extended frames."""
+    wrist vector is short near the guard).
+
+    Uses hysteresis, not a single threshold: once triggered, a side can't
+    trigger again until extension drops below `extension_rearm_deg` (well
+    below the trigger). A single rise-then-retract threshold let landmark
+    jitter during retraction bounce back above the trigger and double-count
+    one real punch as two — confirmed on real footage (70 detected vs ~38
+    actual reps, roughly the 2x pattern jitter-bounce produces)."""
 
     def __init__(self, cfg: dict):
         self.extension_trigger_deg = cfg["punch_detection"]["elbow_extension_trigger_deg"]
+        self.extension_rearm_deg = cfg["punch_detection"]["elbow_extension_rearm_deg"]
         self.min_frames_between = cfg["punch_detection"]["min_frames_between_punches"]
         self._frames_since_last: dict[str, int] = {"left": 999, "right": 999}
-        self._was_extended: dict[str, bool] = {"left": False, "right": False}
+        self._armed: dict[str, bool] = {"left": True, "right": True}
 
     def check(self, features: FrameFeatures) -> list[str]:
         """Returns list of sides ('left'/'right') that just triggered a new
@@ -74,9 +81,17 @@ class PunchDetector:
         triggered = []
         for side in ("left", "right"):
             self._frames_since_last[side] += 1
-            is_extended = features.elbow_extension_deg[side] >= self.extension_trigger_deg
-            if is_extended and not self._was_extended[side] and self._frames_since_last[side] >= self.min_frames_between:
+            extension = features.elbow_extension_deg[side]
+
+            if not self._armed[side] and extension <= self.extension_rearm_deg:
+                self._armed[side] = True
+
+            if (
+                self._armed[side]
+                and extension >= self.extension_trigger_deg
+                and self._frames_since_last[side] >= self.min_frames_between
+            ):
                 triggered.append(side)
                 self._frames_since_last[side] = 0
-            self._was_extended[side] = is_extended
+                self._armed[side] = False
         return triggered

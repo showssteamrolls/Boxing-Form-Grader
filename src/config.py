@@ -60,6 +60,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # --- Punch detection ---
     "punch_detection": {
         "elbow_extension_trigger_deg": 95,   # rising-edge extension = punch landed
+        "elbow_extension_rearm_deg": 70,      # must drop back below this before the next punch can trigger
         "min_frames_between_punches": 6,      # debounce
     },
 
