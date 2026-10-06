@@ -33,7 +33,7 @@
     position: absolute;
     left: auto;
     right: -230px;
-    bottom: 220px;
+    bottom: 600px;
     width: 220px;
     transform: rotate(-6deg);
     pointer-events: none;
@@ -245,11 +245,13 @@ import {
 const CONFIG = {
   minLandmarkVisibility: 0.6,
   smoothing: { alpha: 0.35, maxHoldFrames: 8 },
+  // Calibrated from 90 self-labeled reps via app/log_metrics.py +
+  // app/calibrate_thresholds.py — keep in sync with src/config.py by hand.
   thresholds: {
-    elbowExtensionDeg: { minGood: 155, maxGood: 180, tolerance: 25 },
-    hipRotationDeg: { minGood: 30, maxGood: 70, tolerance: 20 },
-    guardHeightRatio: { minGood: 0.85, maxGood: 1.15, tolerance: 0.35 },
-    punchAngularVelocityDps: { minGood: 400, maxGood: 1400, tolerance: 300 },
+    elbowExtensionDeg: { minGood: 95.8, maxGood: 129.2, tolerance: 16.7 },
+    hipRotationDeg: { minGood: 0.8, maxGood: 8.6, tolerance: 3.9 },
+    guardHeightRatio: { minGood: 0.88, maxGood: 1.15, tolerance: 0.13 },
+    punchAngularVelocityDps: { minGood: 47.4, maxGood: 152.8, tolerance: 52.7 },
   },
   scoreWeights: {
     elbowExtensionDeg: 0.35,
