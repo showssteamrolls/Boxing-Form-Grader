@@ -42,11 +42,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Each metric maps to a (min_good, max_good) range. Values outside this
     # range reduce that metric's sub-score linearly up to `tolerance` degrees
     # or deg/s past the edge, then clamp to 0.
+    # Calibrated from 90 self-labeled reps (20 cross, 70 jab) via
+    # app/log_metrics.py + app/calibrate_thresholds.py, 10th/90th percentile.
     "thresholds": {
-        "elbow_extension_deg": {"min_good": 155, "max_good": 180, "tolerance": 25},
-        "hip_rotation_deg": {"min_good": 30, "max_good": 70, "tolerance": 20},
-        "guard_height_ratio": {"min_good": 0.85, "max_good": 1.15, "tolerance": 0.35},
-        "punch_angular_velocity_dps": {"min_good": 400, "max_good": 1400, "tolerance": 300},
+        "elbow_extension_deg": {"min_good": 95.8, "max_good": 129.2, "tolerance": 16.7},
+        "hip_rotation_deg": {"min_good": 0.8, "max_good": 8.6, "tolerance": 3.9},
+        "guard_height_ratio": {"min_good": 0.88, "max_good": 1.15, "tolerance": 0.13},
+        "punch_angular_velocity_dps": {"min_good": 47.4, "max_good": 152.8, "tolerance": 52.7},
     },
 
     # --- Composite score weights (must sum to 1.0; validated on load) ---
