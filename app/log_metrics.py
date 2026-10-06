@@ -77,6 +77,10 @@ def main() -> None:
 
             for side in triggered_sides:
                 other_side = "left" if side == "right" else "right"
+                # Peak velocity during the swing, not the instantaneous value
+                # at the trigger frame — detection fires at full extension,
+                # where the arm has already stopped moving.
+                peak_velocity_dps = tracker.pop_peak_velocity(side)
                 rows.append({
                     "source_video": Path(args.video).name,
                     "timestamp_s": round(timestamp_ms / 1000.0, 3),
@@ -85,7 +89,7 @@ def main() -> None:
                     "elbow_extension_deg": round(feats.elbow_extension_deg[side], 2),
                     "hip_rotation_deg": round(feats.hip_rotation_deg, 2),
                     "guard_height_ratio": round(feats.guard_height_ratio[other_side], 3),
-                    "wrist_angular_velocity_dps": round(feats.wrist_angular_velocity_dps[side], 1),
+                    "wrist_angular_velocity_dps": round(peak_velocity_dps, 1),
                 })
     finally:
         cap.release()
