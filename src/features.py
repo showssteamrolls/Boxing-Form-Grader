@@ -108,7 +108,15 @@ class FeatureTracker:
     def _wrist_angular_velocity(self, landmarks_xy: np.ndarray, timestamp_ms: float) -> dict[str, float]:
         """Degrees/second the shoulder->wrist vector swept between frames.
         This tracks *rotational* speed of the arm (useful for punch snap),
-        not linear wrist speed in pixels/sec."""
+        not linear wrist speed in pixels/sec.
+
+        Guarded against short shoulder->wrist vectors (e.g. wrist resting near
+        the body in a guard position): a short vector's angle is unstable
+        under small landmark jitter, which otherwise fakes huge angular
+        velocity spikes with no real punch behind them. Only used for scoring
+        now, not as the punch-detection trigger (see PunchDetector)."""
+        MIN_VECTOR_NORM = 0.08  # normalized coords; below this the angle is unstable
+
         result = {}
         dt_s = None
         if self._prev_timestamp_ms is not None:
@@ -118,12 +126,15 @@ class FeatureTracker:
             shoulder = landmarks_xy[LANDMARK[f"{side.upper()}_SHOULDER"]]
             wrist = landmarks_xy[LANDMARK[f"{side.upper()}_WRIST"]]
             curr_vec = wrist - shoulder
-            curr_angle = np.degrees(np.arctan2(curr_vec[1], curr_vec[0]))
+            curr_norm = np.linalg.norm(curr_vec)
 
             prev = self._prev_wrist_xy[side]
-            if prev is None or not dt_s or dt_s <= 0:
+            prev_norm = np.linalg.norm(prev) if prev is not None else 0.0
+
+            if curr_norm < MIN_VECTOR_NORM or prev_norm < MIN_VECTOR_NORM or prev is None or not dt_s or dt_s <= 0:
                 result[side] = 0.0
             else:
+                curr_angle = np.degrees(np.arctan2(curr_vec[1], curr_vec[0]))
                 prev_angle = np.degrees(np.arctan2(prev[1], prev[0]))
                 delta = abs(curr_angle - prev_angle)
                 delta = min(delta, 360 - delta)

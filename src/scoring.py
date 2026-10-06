@@ -57,14 +57,16 @@ def score_punch(features: FrameFeatures, cfg: dict, side: str) -> PunchScore:
 
 
 class PunchDetector:
-    """Flags when a punch is 'in progress' based on wrist angular velocity
-    crossing a trigger threshold, with debouncing so one punch isn't counted
-    multiple times across consecutive fast frames."""
+    """Flags a punch on the rising edge of elbow extension (not velocity —
+    velocity is noisiest exactly when a punch starts, since the shoulder-
+    wrist vector is short near the guard). Debounced so one punch isn't
+    counted on consecutive extended frames."""
 
     def __init__(self, cfg: dict):
-        self.trigger_dps = cfg["punch_detection"]["wrist_velocity_trigger_dps"]
+        self.extension_trigger_deg = cfg["punch_detection"]["elbow_extension_trigger_deg"]
         self.min_frames_between = cfg["punch_detection"]["min_frames_between_punches"]
         self._frames_since_last: dict[str, int] = {"left": 999, "right": 999}
+        self._was_extended: dict[str, bool] = {"left": False, "right": False}
 
     def check(self, features: FrameFeatures) -> list[str]:
         """Returns list of sides ('left'/'right') that just triggered a new
@@ -72,8 +74,9 @@ class PunchDetector:
         triggered = []
         for side in ("left", "right"):
             self._frames_since_last[side] += 1
-            speed = features.wrist_angular_velocity_dps[side]
-            if speed >= self.trigger_dps and self._frames_since_last[side] >= self.min_frames_between:
+            is_extended = features.elbow_extension_deg[side] >= self.extension_trigger_deg
+            if is_extended and not self._was_extended[side] and self._frames_since_last[side] >= self.min_frames_between:
                 triggered.append(side)
                 self._frames_since_last[side] = 0
+            self._was_extended[side] = is_extended
         return triggered

@@ -59,7 +59,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
     # --- Punch detection ---
     "punch_detection": {
-        "wrist_velocity_trigger_dps": 300,   # angular wrist speed to flag "punch in progress"
+        "elbow_extension_trigger_deg": 95,   # rising-edge extension = punch landed
         "min_frames_between_punches": 6,      # debounce
     },
 
