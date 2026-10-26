@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 models/*.task
+data/raw_footage/*
+!data/raw_footage/.gitkeep
+*.pt

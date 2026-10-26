@@ -50,3 +50,11 @@ webcam access on the `file://` protocol. You need a local server.)
 - **Punch detection thresholds are not yet tuned** — ported directly from
   `src/config.py`'s defaults. Tune against real footage on the Python side
   first, then copy final numbers into this file's `CONFIG` object.
+
+## Sparring counter (landing section)
+
+The top of `index.html` is the sparring punch counter. It reads
+`spars/index.json` and stays hidden until at least one spar has been
+processed with `app/sparring_counter.py`, so the page looks like the grader
+alone until then. `counter.js` and `counter.css` hold the section's logic and
+styles.

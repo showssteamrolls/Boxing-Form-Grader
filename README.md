@@ -46,6 +46,30 @@ from MediaPipe releases 0.10.9+ and will raise `AttributeError: module
 'mediapipe' has no attribute 'solutions'` if you try it on a current install.
 Everything here is already written against the current API.
 
+## Sparring punch counter
+
+Counts punches separately for both fighters in a sparring clip. Runs offline
+(YOLO-pose gives keypoints for both fighters; MediaPipe is single-person), and
+writes a JSON file the web page plays back in sync with the video.
+
+```bash
+pip install -r requirements-sparring.txt
+python app/sparring_counter.py --url "https://youtu.be/VIDEO_ID" --title "Spar 1" \
+    --label-a "Me" --label-b "Partner" --start 0 --end 180
+```
+
+- `--label-a` is whoever is on the left at the start, `--label-b` the right
+- Output goes to `web-demo/spars/<id>.json`, and `web-demo/spars/index.json` lists every spar
+- The web page embeds the YouTube video directly, so no footage is hosted
+- Raw downloads land in `data/raw_footage/` (gitignored)
+- Tunables: `--min-speed` (punch sensitivity), `--hit-margin` (how close counts as landed), `--jab-max-arc`
+
+How it counts: wrist velocity relative to the shoulders, projected toward the
+opponent's head. Each peak is a punch. Lead-hand punches on a straight path are
+jabs, everything else is power. Landed means the wrist reached the opponent's
+head/torso box at full extension. All of it is pose-based estimation, so
+blocked punches can count as landed.
+
 ## Retuning thresholds
 
 Copy the `thresholds` and `score_weights` blocks out of `src/config.py`'s
@@ -95,13 +119,16 @@ boxing-form-grader/
 │   ├── features.py            # joint angles, angular velocity, guard height
 │   ├── smoothing.py           # visibility-gated EMA smoothing
 │   ├── scoring.py             # thresholds → per-metric + composite score
-│   └── live_pipeline.py       # webcam capture → overlay → live score
+│   ├── live_pipeline.py       # webcam capture → overlay → live score
+│   └── sparring.py            # two-fighter tracking, punch detection, jab/power, landed
 ├── notebooks/
 │   └── threshold_tuning.ipynb
 ├── app/
-│   └── demo_ui.py             # webcam demo entrypoint
+│   ├── demo_ui.py             # webcam demo entrypoint
+│   └── sparring_counter.py    # spar clip → per-fighter punch JSON for the web page
 └── tests/
-    └── test_features.py       # pure-math regression tests (no camera needed)
+    ├── test_features.py       # pure-math regression tests (no camera needed)
+    └── test_sparring.py       # synthetic two-fighter detection tests
 ```
 
 ## Running tests

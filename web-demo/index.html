@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Boxing Form Grader</title>
+<title>Sparring Punch Counter &amp; Form Grader</title>
 <link rel="icon" href="data:," />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="counter.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #0a0a0c; color: #eee; font-family: 'Inter', -apple-system, sans-serif; }
@@ -177,6 +178,29 @@
 </head>
 <body>
 
+<section class="pc" id="counter" hidden>
+  <div class="pc-head">
+    <h2>Sparring Punch Counter</h2>
+    <p>Pose-tracked punch counts for both fighters, live with the video.</p>
+  </div>
+  <div class="pc-stage">
+    <div class="pc-video" id="pcVideo"></div>
+  </div>
+  <div class="pc-board">
+    <div class="pc-card a" id="pcCardA"></div>
+    <div class="pc-mid">
+      <div class="pc-clock" id="pcClock">0:00</div>
+      <div class="pc-clock-cap">Elapsed</div>
+    </div>
+    <div class="pc-card b" id="pcCardB"></div>
+  </div>
+  <div class="pc-timeline" id="pcTimeline"></div>
+  <div class="pc-picker" id="pcPicker"></div>
+  <p class="pc-note">Pose-based estimates. Tall ticks are power punches, bright ticks are landed. Blocked punches can register as landed.</p>
+</section>
+
+<div class="wip" id="gradeWip" hidden><span>Under construction</span></div>
+
 <div class="hero">
   <div class="demo-tile-wrap">
     <div class="demo-tile">
@@ -233,6 +257,7 @@
   </div>
 </div>
 
+<script src="counter.js" defer></script>
 <script type="module">
 import {
   PoseLandmarker,
