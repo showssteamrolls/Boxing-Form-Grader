@@ -13,17 +13,19 @@ sys.path.insert(0, str(ROOT / "src"))
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
+from spar_features import build_pose, build_series  # noqa: E402
 from sparring import (  # noqa: E402
     Detection,
     FighterTracker,
     SparringConfig,
-    analyze,
+    analyze_full,
     build_report,
     summarize,
     torso_color,
 )
 
 YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
+CACHE_DIR = ROOT / "data" / "pose_cache"
 
 
 def youtube_id(url):
@@ -58,21 +60,74 @@ def download(url, dest_dir):
     return files[0], vid
 
 
-def run_pose(video_path, model_name, start_s, end_s, imgsz, device, conf, cfg):
+def prepare_video(src, dst, height=720, fps=30):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+        return dst
+    subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-i", str(src),
+            "-vf", f"scale=-2:{height},fps={fps}",
+            "-c:v", "libx264", "-crf", "27", "-preset", "veryfast",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(dst),
+        ],
+        check=True,
+    )
+    return dst
+
+
+def save_detections(path, frames, fps, size, meta):
+    rows = [(k, d) for k, dets in enumerate(frames) for d in dets]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        n_frames=len(frames),
+        fps=fps,
+        size=np.array(size),
+        meta=json.dumps(meta),
+        frame=np.array([k for k, _ in rows], dtype=np.int32),
+        kp=np.stack([d.kp for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 17, 2), np.float32),
+        conf=np.stack([d.conf for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 17), np.float32),
+        box=np.stack([d.box for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 4), np.float32),
+        color=np.stack(
+            [np.full(3, np.nan) if d.color is None else d.color for _, d in rows]
+        ).astype(np.float32) if rows else np.zeros((0, 3), np.float32),
+    )
+
+
+def load_detections(path, meta):
+    if not path.exists():
+        return None
+    data = np.load(path, allow_pickle=False)
+    if json.loads(str(data["meta"])) != meta:
+        return None
+    frames = [[] for _ in range(int(data["n_frames"]))]
+    for k, kp, conf, box, color in zip(data["frame"], data["kp"], data["conf"], data["box"], data["color"]):
+        col = None if np.isnan(color).any() else color.astype(float)
+        frames[int(k)].append(Detection(kp=kp.astype(float), conf=conf.astype(float), box=box.astype(float), color=col))
+    return frames, float(data["fps"]), tuple(int(v) for v in data["size"])
+
+
+def detect_frames(video_path, model_name, start_s, end_s, stride, imgsz, device, conf):
     from ultralytics import YOLO
 
     model = YOLO(model_name)
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Could not open {video_path}")
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    first = int(start_s * fps)
-    last = total if end_s is None else min(total, int(end_s * fps))
+    first = int(start_s * native_fps)
+    last = total if end_s is None else min(total, int(end_s * native_fps))
     cap.set(cv2.CAP_PROP_POS_FRAMES, first)
-    tracker = FighterTracker(fps, cfg)
-    pairs = []
+    frames = []
     for n in range(first, last):
+        if (n - first) % stride:
+            if not cap.grab():
+                break
+            continue
         ok, frame = cap.read()
         if not ok:
             break
@@ -88,12 +143,16 @@ def run_pose(video_path, model_name, start_s, end_s, imgsz, device, conf, cfg):
             boxes = result.boxes.xyxy.cpu().numpy()
             for kp, kc, box in zip(kps, confs, boxes):
                 dets.append(Detection(kp=kp, conf=kc, box=box, color=torso_color(frame, kp, kc)))
-        pairs.append(tracker.update(dets))
-        done = n - first + 1
-        if done % 300 == 0:
-            print(f"{done}/{last - first} frames", flush=True)
+        frames.append(dets)
+        if len(frames) % 200 == 0:
+            print(f"{len(frames)} frames processed ({(n - first) / native_fps:.0f}s of video)", flush=True)
     cap.release()
-    return pairs, fps, total / fps
+    return frames, native_fps / stride, (width, height), total / native_fps
+
+
+def track_frames(frames, fps, cfg):
+    tracker = FighterTracker(fps, cfg)
+    return [tracker.update(dets) for dets in frames]
 
 
 def update_manifest(out_dir, slug, report):
@@ -113,10 +172,10 @@ def update_manifest(out_dir, slug, report):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Count punches for both fighters in a sparring clip")
+    parser = argparse.ArgumentParser(description="Count punches and engineer live metrics for both fighters in a spar")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--url", help="YouTube URL (unlisted works)")
-    source.add_argument("--video", help="Local video file")
+    source.add_argument("--video", help="Local video file (re-encoded to a 720p/30fps web copy first)")
     parser.add_argument("--title", default=None)
     parser.add_argument("--label-a", default="Fighter A", help="Fighter on the left at the start")
     parser.add_argument("--label-b", default="Fighter B", help="Fighter on the right at the start")
@@ -124,53 +183,74 @@ def main():
     parser.add_argument("--end", type=float, default=None, help="Analysis end, seconds")
     parser.add_argument("--out", default=str(ROOT / "web-demo" / "spars"))
     parser.add_argument("--slug", default=None)
-    parser.add_argument("--page-video", default=None, help="Path the web page should play instead of YouTube")
     parser.add_argument("--model", default="yolo11s-pose.pt")
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--stride", type=int, default=1, help="Analyse every Nth frame")
     parser.add_argument("--device", default=None)
     parser.add_argument("--det-conf", type=float, default=0.3)
+    parser.add_argument("--redetect", action="store_true", help="Ignore the cached pose detections")
     parser.add_argument("--min-speed", type=float, default=None)
     parser.add_argument("--hit-margin", type=float, default=None)
     parser.add_argument("--jab-max-arc", type=float, default=None)
     args = parser.parse_args()
 
     cfg = SparringConfig()
-    if args.min_speed is not None:
-        cfg.min_speed = args.min_speed
-    if args.hit_margin is not None:
-        cfg.hit_margin = args.hit_margin
-    if args.jab_max_arc is not None:
-        cfg.jab_max_arc = args.jab_max_arc
+    for name in ("min_speed", "hit_margin", "jab_max_arc"):
+        value = getattr(args, name)
+        if value is not None:
+            setattr(cfg, name, value)
 
+    out_dir = Path(args.out)
     yt = None
+    page_video = None
     if args.url:
         video_path, yt = download(args.url, ROOT / "data" / "raw_footage")
     else:
-        video_path = Path(args.video)
+        src = Path(args.video)
+        slug_hint = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or src.stem).strip("-")
+        video_path = prepare_video(src, out_dir / f"{slug_hint}.mp4")
+        page_video = f"spars/{video_path.name}"
 
     slug = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or yt or video_path.stem).strip("-")
-    pairs, fps, duration = run_pose(
-        video_path, args.model, args.start, args.end, args.imgsz, args.device, args.det_conf, cfg
-    )
-    punches, stances = analyze(pairs, fps, cfg, start_s=args.start)
-    end_s = args.end if args.end is not None else duration
-
     meta = {
-        "title": args.title or slug,
-        "youtube": yt,
-        "video": args.page_video,
+        "model": args.model, "imgsz": args.imgsz, "stride": args.stride,
+        "start": args.start, "end": args.end, "det_conf": args.det_conf,
+        "video_size": video_path.stat().st_size,
     }
-    report = build_report(punches, stances, [args.label_a, args.label_b], fps, args.start, end_s, meta)
+    cache_path = CACHE_DIR / f"{slug}.npz"
+    cached = None if args.redetect else load_detections(cache_path, meta)
+    if cached:
+        frames, fps, size = cached
+        duration = (args.end if args.end is not None else (len(frames) / fps + args.start))
+        print(f"Reusing cached detections ({len(frames)} frames)")
+    else:
+        frames, fps, size, duration = detect_frames(
+            video_path, args.model, args.start, args.end, args.stride, args.imgsz, args.device, args.det_conf
+        )
+        save_detections(cache_path, frames, fps, size, meta)
 
-    out_dir = Path(args.out)
+    pairs = track_frames(frames, fps, cfg)
+    analysis = analyze_full(pairs, fps, cfg, start_s=args.start)
+    punches, stances = analysis["punches"], analysis["stances"]
+    end_s = args.start + len(frames) / fps
+
+    info = {"title": args.title or slug, "youtube": yt, "video": page_video, "size": list(size)}
+    report = build_report(punches, stances, [args.label_a, args.label_b], fps, args.start, end_s, info)
+    report["version"] = 2
+    report["series"] = build_series(analysis, punches, fps, args.start)
+    pose = build_pose(analysis, fps, args.start, size[0], size[1])
+
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{slug}.json").write_text(json.dumps(report, separators=(",", ":")))
+    if pose:
+        (out_dir / f"{slug}.pose.json").write_text(json.dumps(pose, separators=(",", ":")))
     update_manifest(out_dir, slug, report)
 
     counts = summarize(punches)
     for fid, label in zip(("A", "B"), (args.label_a, args.label_b)):
         c = counts[fid]
-        print(f"{label}: {c['thrown']} thrown, {c['landed']} landed, {c['jab']} jabs, {c['power']} power")
+        rate = f"{100 * c['landed'] / c['thrown']:.0f}%" if c["thrown"] else "--"
+        print(f"{label}: {c['thrown']} thrown, {c['landed']} landed ({rate}), {c['jab']} jabs, {c['power']} power")
     print(f"Wrote {out_dir / (slug + '.json')}")
 
 

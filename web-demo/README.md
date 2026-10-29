@@ -51,10 +51,13 @@ webcam access on the `file://` protocol. You need a local server.)
   `src/config.py`'s defaults. Tune against real footage on the Python side
   first, then copy final numbers into this file's `CONFIG` object.
 
-## Sparring counter (landing section)
+## Sparring analytics (landing section)
 
-The top of `index.html` is the sparring punch counter. It reads
+The top of `index.html` is the sparring dashboard. It reads
 `spars/index.json` and stays hidden until at least one spar has been
 processed with `app/sparring_counter.py`, so the page looks like the grader
 alone until then. `counter.js` and `counter.css` hold the section's logic and
-styles.
+styles; `metrics.html` explains each number.
+
+Serving locally needs a server that supports HTTP Range requests (`npx serve .`
+does; `python -m http.server` does not, so the video can't be scrubbed).

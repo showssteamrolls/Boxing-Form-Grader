@@ -16,6 +16,7 @@
   /* ---------------- HERO ---------------- */
   .hero {
     position: relative;
+    overflow-y: clip;
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -180,23 +181,43 @@
 
 <section class="pc" id="counter" hidden>
   <div class="pc-head">
-    <h2>Sparring Punch Counter</h2>
-    <p>Pose-tracked punch counts for both fighters, live with the video.</p>
+    <h2>Sparring Analytics</h2>
+    <p>Per-fighter punch counts and live metrics, synced to the video. <a href="metrics.html">How every number is calculated →</a></p>
   </div>
   <div class="pc-stage">
-    <div class="pc-video" id="pcVideo"></div>
+    <div class="pc-video" id="pcVideo">
+      <canvas id="pcOverlay"></canvas>
+      <button type="button" class="pc-overlay-btn" id="pcOverlayBtn" hidden>Skeleton: on</button>
+    </div>
+    <div class="pc-title" id="pcTitle"></div>
   </div>
   <div class="pc-board">
-    <div class="pc-card a" id="pcCardA"></div>
+    <div id="pcCardA"></div>
     <div class="pc-mid">
       <div class="pc-clock" id="pcClock">0:00</div>
       <div class="pc-clock-cap">Elapsed</div>
+      <div class="pc-range"><b id="pcRange">--</b><span>Range · torsos</span></div>
     </div>
-    <div class="pc-card b" id="pcCardB"></div>
+    <div id="pcCardB"></div>
+  </div>
+  <div id="pcPanels" class="pc-panels">
+    <div class="pc-panel pc-leadpanel">
+      <div class="pc-panel-title">Lead-hand activity</div>
+      <div class="pc-lead-bar" id="pcLeadBar"><i class="a"></i><i class="b"></i></div>
+      <div class="pc-lead-text" id="pcLeadText">--</div>
+    </div>
+    <div class="pc-panel pc-compare">
+      <div class="pc-panel-title">Head to head <span>tap a row to chart it</span></div>
+      <div class="pc-rows" id="pcRows"></div>
+    </div>
+    <div class="pc-panel pc-chartpanel">
+      <div class="pc-panel-title" id="pcChartTitle">--</div>
+      <canvas id="pcChart"></canvas>
+    </div>
   </div>
   <div class="pc-timeline" id="pcTimeline"></div>
   <div class="pc-picker" id="pcPicker"></div>
-  <p class="pc-note">Pose-based estimates. Tall ticks are power punches, bright ticks are landed. Blocked punches can register as landed.</p>
+  <p class="pc-note">Pose-based estimates. Timeline: tall ticks are power punches, bright ticks are landed. Blocked punches can register as landed.</p>
 </section>
 
 <div class="wip" id="gradeWip" hidden><span>Under construction</span></div>

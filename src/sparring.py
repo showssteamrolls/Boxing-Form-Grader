@@ -3,13 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.ndimage import uniform_filter1d
+from scipy.ndimage import median_filter, uniform_filter1d
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import find_peaks
 
 NOSE = 0
 L_SHOULDER = 5
 R_SHOULDER = 6
+L_ELBOW = 7
+R_ELBOW = 8
 L_WRIST = 9
 R_WRIST = 10
 L_HIP = 11
@@ -244,6 +246,27 @@ def lead_side(me, opp, torso):
     return "left" if scores["left"] >= scores["right"] else "right"
 
 
+def lead_series(me, opp, torso, fps, smooth_s=2.0, deadband=0.04):
+    mid = _mid_shoulder(me.kp)
+    u = _unit(_ffill(_head(opp.kp)) - mid)
+    proj = {
+        side: np.sum((me.kp[:, j] - mid) * u, axis=1) / torso for side, j in WRIST.items()
+    }
+    diff = _ffill((proj["left"] - proj["right"]).reshape(-1, 1))[:, 0]
+    diff = np.nan_to_num(diff, nan=0.0)
+    size = max(3, int(round(smooth_s * fps)) | 1)
+    smooth = median_filter(diff, size=size, mode="nearest")
+    lead_left = np.empty(len(smooth), dtype=bool)
+    current = bool(smooth[0] >= 0)
+    for k, value in enumerate(smooth):
+        if current and value < -deadband:
+            current = False
+        elif not current and value > deadband:
+            current = True
+        lead_left[k] = current
+    return lead_left
+
+
 def _detect(me, opp, side, torso, fps, cfg):
     j = WRIST[side]
     mid = _mid_shoulder(me.kp)
@@ -311,18 +334,17 @@ def _dedupe(events, gap_s):
     return keep
 
 
-def analyze(pairs, fps, cfg=None, start_s=0.0):
+def analyze_full(pairs, fps, cfg=None, start_s=0.0):
     cfg = cfg or SparringConfig()
     if len(pairs) < 3:
-        return [], ["orthodox", "orthodox"]
+        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None}
     tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
     torsos = [torso_length(t) for t in tracks]
+    leads = [lead_series(tracks[i], tracks[1 - i], torsos[i], fps) for i in (0, 1)]
+    stances = ["orthodox" if float(leads[i].mean()) >= 0.5 else "southpaw" for i in (0, 1)]
     punches = []
-    stances = []
     for i in (0, 1):
         me, opp = tracks[i], tracks[1 - i]
-        lead = lead_side(me, opp, torsos[i])
-        stances.append("orthodox" if lead == "left" else "southpaw")
         events = []
         for side in ("left", "right"):
             peaks, approach, rel = _detect(me, opp, side, torsos[i], fps, cfg)
@@ -330,12 +352,14 @@ def analyze(pairs, fps, cfg=None, start_s=0.0):
             for peak in peaks:
                 peak = int(peak)
                 lo, hi = _movement_span(approach, rel, peak, fps, cfg)
-                is_jab = side == lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
+                is_lead = (side == "left") == bool(leads[i][peak])
+                is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),
                         "fighter": FIGHTER_IDS[i],
                         "hand": side,
+                        "lead": bool(is_lead),
                         "type": "jab" if is_jab else "power",
                         "landed": bool(_landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg)),
                         "speed": round(float(approach[peak]), 1),
@@ -343,7 +367,12 @@ def analyze(pairs, fps, cfg=None, start_s=0.0):
                 )
         punches.extend(_dedupe(events, cfg.cross_hand_gap_s))
     punches.sort(key=lambda e: e["t"])
-    return punches, stances
+    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads}
+
+
+def analyze(pairs, fps, cfg=None, start_s=0.0):
+    result = analyze_full(pairs, fps, cfg, start_s)
+    return result["punches"], result["stances"]
 
 
 def summarize(punches):

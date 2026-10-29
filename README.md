@@ -46,29 +46,34 @@ from MediaPipe releases 0.10.9+ and will raise `AttributeError: module
 'mediapipe' has no attribute 'solutions'` if you try it on a current install.
 Everything here is already written against the current API.
 
-## Sparring punch counter
+## Sparring analytics
 
-Counts punches separately for both fighters in a sparring clip. Runs offline
-(YOLO-pose gives keypoints for both fighters; MediaPipe is single-person), and
-writes a JSON file the web page plays back in sync with the video.
+Per-fighter punch counts, land rate and live metrics for a sparring clip,
+shown on the web demo's landing page. Runs offline (YOLO-pose tracks both
+fighters; MediaPipe is single-person) and writes JSON the page plays back in
+sync with the video. Every metric is explained in `web-demo/metrics.html`.
 
 ```bash
 pip install -r requirements-sparring.txt
+
+# local clip: re-encoded to a 720p/30fps copy in web-demo/spars/, then analysed
+python app/sparring_counter.py --video web-demo/sample-clips/spar.mp4 \
+    --title "Round 2" --label-a "Me" --label-b "Partner"
+
+# or an unlisted YouTube video (embedded on the page, nothing hosted)
 python app/sparring_counter.py --url "https://youtu.be/VIDEO_ID" --title "Spar 1" \
     --label-a "Me" --label-b "Partner" --start 0 --end 180
 ```
 
 - `--label-a` is whoever is on the left at the start, `--label-b` the right
-- Output goes to `web-demo/spars/<id>.json`, and `web-demo/spars/index.json` lists every spar
-- The web page embeds the YouTube video directly, so no footage is hosted
+- Pose detections are cached in `data/pose_cache/`, so retuning `--min-speed`, `--hit-margin` or `--jab-max-arc` reruns in seconds. `--redetect` forces a fresh pass
+- Output: `web-demo/spars/<id>.json` (punches + 4 Hz metric series), `<id>.pose.json` (skeleton overlay), and `index.json` listing every spar
 - Raw downloads land in `data/raw_footage/` (gitignored)
-- Tunables: `--min-speed` (punch sensitivity), `--hit-margin` (how close counts as landed), `--jab-max-arc`
 
-How it counts: wrist velocity relative to the shoulders, projected toward the
-opponent's head. Each peak is a punch. Lead-hand punches on a straight path are
-jabs, everything else is power. Landed means the wrist reached the opponent's
-head/torso box at full extension. All of it is pose-based estimation, so
-blocked punches can count as landed.
+Punches come from wrist speed relative to the shoulders, projected toward the
+opponent's head. "Landed" means the glove reached the opponent's head/torso
+zone, so blocks can count. Metrics: land rate, output, lead-hand activity,
+lead-arm angle, guard up, hand speed, pressure, range.
 
 ## Retuning thresholds
 
@@ -120,7 +125,8 @@ boxing-form-grader/
 │   ├── smoothing.py           # visibility-gated EMA smoothing
 │   ├── scoring.py             # thresholds → per-metric + composite score
 │   ├── live_pipeline.py       # webcam capture → overlay → live score
-│   └── sparring.py            # two-fighter tracking, punch detection, jab/power, landed
+│   ├── sparring.py            # two-fighter tracking, punch detection, jab/power, landed
+│   └── spar_features.py       # per-fighter rolling metrics + pose track for the dashboard
 ├── notebooks/
 │   └── threshold_tuning.ipynb
 ├── app/
@@ -128,7 +134,8 @@ boxing-form-grader/
 │   └── sparring_counter.py    # spar clip → per-fighter punch JSON for the web page
 └── tests/
     ├── test_features.py       # pure-math regression tests (no camera needed)
-    └── test_sparring.py       # synthetic two-fighter detection tests
+    ├── test_sparring.py       # synthetic two-fighter detection tests
+    └── test_spar_features.py  # rolling-metric and feature tests
 ```
 
 ## Running tests

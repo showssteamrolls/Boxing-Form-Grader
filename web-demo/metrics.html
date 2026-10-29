@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>How the Metrics Work</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: #0a0a0c; color: #e8e8ea; font-family: 'Inter', -apple-system, sans-serif; line-height: 1.65; }
+  .wrap { width: min(760px, 100%); margin: 0 auto; padding: 48px 24px 96px; }
+  .back { display: inline-block; color: rgba(255,255,255,0.55); font-size: 0.85rem; text-decoration: none; margin-bottom: 28px; }
+  .back:hover { color: #fff; }
+  h1 { font-family: 'Oswald', sans-serif; font-size: 2.4rem; font-weight: 700; text-transform: uppercase; line-height: 1.1; }
+  .lede { color: rgba(255,255,255,0.6); margin-top: 12px; font-size: 1rem; }
+  h2 { font-family: 'Oswald', sans-serif; font-size: 1.15rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin: 56px 0 6px; color: rgba(255,255,255,0.9); }
+  h3 { font-family: 'Oswald', sans-serif; font-size: 1.35rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.01em; }
+  p { margin-top: 10px; }
+  p.sub { color: rgba(255,255,255,0.55); font-size: 0.92rem; }
+  code { font-family: 'Space Grotesk', monospace; font-size: 0.88em; background: #17171b; border: 1px solid #26262c; border-radius: 5px; padding: 1px 6px; }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+  .toc a { color: rgba(255,255,255,0.7); font-size: 0.8rem; text-decoration: none; border: 1px solid #2a2a30; border-radius: 999px; padding: 5px 13px; background: #111114; }
+  .toc a:hover { border-color: rgba(255,255,255,0.45); color: #fff; }
+  .metric { background: #111114; border: 1px solid #2a2a30; border-radius: 14px; padding: 22px 24px 24px; margin-top: 16px; scroll-margin-top: 20px; }
+  .metric .where { font-size: 0.74rem; color: rgba(255,255,255,0.4); margin-top: 3px; }
+  dl { margin-top: 14px; }
+  dt { font-family: 'Oswald', sans-serif; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); margin-top: 14px; }
+  dd { margin-top: 3px; }
+  ul { margin: 8px 0 0 20px; }
+  li { margin-top: 4px; }
+  .limits li { margin-top: 10px; }
+  .a-dot, .b-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .a-dot { background: #00e5ff; }
+  .b-dot { background: #ff2fb0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Back to the dashboard</a>
+  <h1>How the metrics work</h1>
+  <p class="lede">Every number on the dashboard is computed from body points a pose model finds in each video frame. No one labeled punches by hand. This page says what each number is, how it's computed, and where it can be wrong.</p>
+
+  <div class="toc">
+    <a href="#thrown">Thrown</a>
+    <a href="#landed">Landed</a>
+    <a href="#land-rate">Land rate</a>
+    <a href="#jab-power">Jab / power</a>
+    <a href="#output">Output</a>
+    <a href="#lead-hand">Lead hand</a>
+    <a href="#lead-activity">Lead-hand activity</a>
+    <a href="#lead-angle">Lead-arm angle</a>
+    <a href="#guard">Guard up</a>
+    <a href="#speed">Hand speed</a>
+    <a href="#pressure">Pressure</a>
+    <a href="#range">Range</a>
+    <a href="#limits">What it can't tell you</a>
+  </div>
+
+  <h2>The pipeline</h2>
+  <p>A pose model (YOLO11-pose) marks 17 body points on every person in every frame. The two largest people on the floor become <span class="a-dot"></span>fighter A and <span class="b-dot"></span>fighter B. Reflections in the mirror and people far in the background are smaller and get ignored.</p>
+  <p>Between frames, each fighter is matched to the same body by position and by shirt color, so identities hold when the two cross or clinch. A is whoever starts on the left.</p>
+  <p>Distances are measured in <strong>torso lengths</strong> (shoulder midpoint to hip midpoint), not pixels. That keeps a fighter who is closer to the camera from looking faster just because they look bigger. Speeds are torso lengths per second (<code>torso/s</code>).</p>
+  <p>Counts are exact lookups on the punch list. The rolling metrics are computed ahead of time, four samples per second, and the page reads the right sample as the video plays.</p>
+
+  <h2>Punch counts</h2>
+
+  <div class="metric" id="thrown">
+    <h3>Thrown</h3>
+    <div class="where">Scoreboard · running total</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>Punches a fighter has thrown so far in the clip, counting both hands.</dd>
+      <dt>How it's computed</dt>
+      <dd>For each hand, take the wrist's position relative to the shoulders, then its speed toward the opponent's head. Each clear peak in that speed is one punch. A peak has to be fast enough (at least 5 torso/s), stand out from the movement around it, and sit at least 0.18 s from the previous peak on the same hand. If both hands peak within 0.1 s, only the faster one counts.</dd>
+      <dt>Read it as</dt>
+      <dd>Volume, including punches that were blocked or missed. Feints and slow pawing jabs under the speed cutoff don't count.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="landed">
+    <h3>Landed</h3>
+    <div class="where">Scoreboard · running total</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>Thrown punches where the glove reached the opponent.</dd>
+      <dt>How it's computed</dt>
+      <dd>From the moment of peak speed until the arm is fully out, check whether the wrist comes inside the opponent's head-and-torso zone: the box around their nose, shoulders and hips, widened by 0.35 of their torso length on each side.</dd>
+      <dt>Read it as</dt>
+      <dd>"Reached the target area." A punch caught on a glove or forearm still counts, because from one camera a block and a hit look the same. Treat the number as an upper bound on clean hits. It is best for comparing the two fighters under the same conditions, less so for quoting as a CompuBox-style stat.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="land-rate">
+    <h3>Land rate</h3>
+    <div class="where">Scoreboard · running · Head to head · last 30 s</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>Landed divided by thrown.</dd>
+      <dt>How it's computed</dt>
+      <dd>The scoreboard figure uses every punch from the start of the clip to now. The head-to-head row uses only the last 30 seconds, so it shows who is connecting right now. The 30-second figure stays blank until a fighter has thrown at least 3 punches in that window.</dd>
+      <dt>Read it as</dt>
+      <dd>Accuracy. Early in the clip the running figure swings a lot because the sample is small: 1 of 2 is 50%, and one more punch moves it a long way.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="jab-power">
+    <h3>Jab / power</h3>
+    <div class="where">Scoreboard · running totals</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>A punch is a jab if it comes from the lead hand and travels in a straight line. Everything else, including crosses, hooks, uppercuts and rear-hand shots, counts as power.</dd>
+      <dt>How it's computed</dt>
+      <dd>The lead hand is found as described under <a href="#lead-hand" style="color:#fff">Lead hand</a>. The path of the wrist from the start of the movement to full extension is compared with the straight line between those two points. If the path never bows away from that line by more than 25% of its length, it's straight.</dd>
+      <dt>Read it as</dt>
+      <dd>A rough split by punch family, not a per-punch label. A lead hook that looks straight from this camera angle gets called a jab, and a lazy rear-hand cross is always power.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="output">
+    <h3>Output</h3>
+    <div class="where">Head to head · last 10 s</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>Punches per minute at the current moment.</dd>
+      <dt>How it's computed</dt>
+      <dd>Punches thrown in the last 10 seconds, scaled up to a full minute. In the first 10 seconds of a clip it divides by whatever time has passed, with a floor of 5 seconds so one early punch doesn't read as 240 per minute.</dd>
+      <dt>Read it as</dt>
+      <dd>Work rate. It rises and falls with exchanges, so watch the chart for the pattern, not one reading.</dd>
+    </dl>
+  </div>
+
+  <h2>Lead hand</h2>
+
+  <div class="metric" id="lead-hand">
+    <h3>Lead hand &amp; stance</h3>
+    <div class="where">Stance tag on each card · "from lead hand" on the scoreboard</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>The lead hand is the one held closer to the opponent. Orthodox fighters lead with the left, southpaws with the right.</dd>
+      <dt>How it's computed</dt>
+      <dd>In every frame, measure how far each wrist sits toward the opponent's head, relative to the fighter's shoulders. The hand that is further forward is the lead hand. That value is smoothed over about 2 seconds, with a small dead zone, so a cross extending the rear hand doesn't flip the lead. If a fighter switches stance mid-clip, the lead hand switches with a short delay. The stance tag shows whichever stance the fighter held for most of the clip.</dd>
+      <dt>Read it as</dt>
+      <dd>"From lead hand" on each card is the share of that fighter's punches thrown with the lead hand.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="lead-activity">
+    <h3>Lead-hand activity</h3>
+    <div class="where">Banner · Head to head · last 5 s</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>How much the lead hand is moving: jabs, feints, probing, touching the opponent's guard, parrying. It counts movement that never turns into a counted punch.</dd>
+      <dt>How it's computed</dt>
+      <dd>Take the lead wrist's position relative to the shoulders, then its speed in torso lengths per second, then average over the last 5 seconds. Measuring relative to the shoulders means stepping forward or back doesn't register as hand movement.</dd>
+      <dt>Read it as</dt>
+      <dd>The colored bar at the top of the dashboard splits the two fighters' current values: if A reads 3.0 and B reads 1.0, the bar is 75% A. Higher means the lead hand is busier. A fighter with high activity and few counted jabs is probing without committing.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="lead-angle">
+    <h3>Lead-arm angle</h3>
+    <div class="where">Head to head · half-second average</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>The angle at the lead elbow, in degrees, between the upper arm and the forearm.</dd>
+      <dt>How it's computed</dt>
+      <dd>Angle at the elbow between the line to the shoulder and the line to the wrist, averaged over half a second to cut jitter from the pose model.</dd>
+      <dt>Read it as</dt>
+      <dd>About 180 is a straight arm, around 90 is a tight guard. A lead arm that sits at 60 to 100 between punches and snaps toward 160 or more is jabbing. A lead arm that stays low and bent is mostly defending. This is a 2D angle from one camera, so an arm pointing at or away from the lens looks more bent than it is.</dd>
+    </dl>
+  </div>
+
+  <h2>Defense, speed and position</h2>
+
+  <div class="metric" id="guard">
+    <h3>Guard up</h3>
+    <div class="where">Head to head · last 10 s</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>The share of time both hands are above shoulder height.</dd>
+      <dt>How it's computed</dt>
+      <dd>In each frame, check that both wrists are higher than the midpoint of the shoulders. Average over the last 10 seconds.</dd>
+      <dt>Read it as</dt>
+      <dd>Hand discipline. Throwing punches drops a hand briefly, so even a tidy fighter will not read 100%. Look for sustained dips: low hands while the opponent is attacking.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="speed">
+    <h3>Hand speed</h3>
+    <div class="where">Head to head · last 8 punches</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>How fast the fighter's recent punches were moving.</dd>
+      <dt>How it's computed</dt>
+      <dd>For each counted punch, the peak speed of the wrist toward the opponent, in torso lengths per second. The row shows the average of the fighter's last 8 punches.</dd>
+      <dt>Read it as</dt>
+      <dd>Snap, not power. Frame rate caps how fast a peak can show up (the video is analyzed at 30 frames per second), so absolute values run a little low. Comparing the two fighters is fair.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="pressure">
+    <h3>Pressure</h3>
+    <div class="where">Head to head · last 3 s</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>How fast a fighter is moving toward the opponent.</dd>
+      <dt>How it's computed</dt>
+      <dd>The speed of the fighter's torso center along the line to the opponent's torso center, in torso lengths per second, averaged over 3 seconds. Positive means advancing, negative means backing up. The bar shows advancing only.</dd>
+      <dt>Read it as</dt>
+      <dd>Who is driving the exchange. When both fighters read positive, they're closing the gap on each other, and a clinch or exchange is likely.</dd>
+    </dl>
+  </div>
+
+  <div class="metric" id="range">
+    <h3>Range</h3>
+    <div class="where">Between the two scoreboards</div>
+    <dl>
+      <dt>What it is</dt>
+      <dd>How far apart the fighters are, in torso lengths.</dd>
+      <dt>How it's computed</dt>
+      <dd>Distance between the two torso centers, divided by the average of their torso lengths, smoothed over half a second.</dd>
+      <dt>Read it as</dt>
+      <dd>Under about 1.5 is close or inside. Around 2 to 3 is a jab's reach. Beyond 4 the fighters are resetting. Fighters at different depths from the camera make this less precise.</dd>
+    </dl>
+  </div>
+
+  <h2 id="limits">What it can't tell you</h2>
+  <ul class="limits">
+    <li><strong>Blocks look like hits.</strong> One camera can't see whether a glove touched a face or a forearm. Landed and land rate are generous.</li>
+    <li><strong>Depth is flat.</strong> A punch that passes in front of the opponent's head in the image but not through it can count as landed. Side-on footage works best.</li>
+    <li><strong>Hidden limbs get guessed.</strong> If an arm is behind a body or a glove is out of frame for a moment, short gaps (a quarter second or less) are filled in. Longer gaps leave that stretch blank, and punches inside it are missed.</li>
+    <li><strong>Clinches are hard.</strong> When the two bodies overlap, the pose model may confuse limbs. Counts during a clinch deserve less trust.</li>
+    <li><strong>It's an estimate.</strong> Counts were not checked against hand-scored footage for every clip. If something looks off, scrub the video with the skeleton on and see whether the tracking is following the right body.</li>
+  </ul>
+</div>
+</body>
+</html>

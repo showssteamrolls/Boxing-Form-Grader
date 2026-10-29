@@ -5,3 +5,4 @@ models/*.task
 data/raw_footage/*
 !data/raw_footage/.gitkeep
 *.pt
+data/pose_cache/
