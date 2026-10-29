@@ -21,7 +21,8 @@ from sparring import (  # noqa: E402
     analyze_full,
     build_report,
     summarize,
-    torso_color,
+    appearance,
+    resolve_identity,
 )
 
 YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
@@ -90,8 +91,8 @@ def save_detections(path, frames, fps, size, meta):
         conf=np.stack([d.conf for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 17), np.float32),
         box=np.stack([d.box for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 4), np.float32),
         color=np.stack(
-            [np.full(3, np.nan) if d.color is None else d.color for _, d in rows]
-        ).astype(np.float32) if rows else np.zeros((0, 3), np.float32),
+            [np.full(6, np.nan) if d.color is None else d.color for _, d in rows]
+        ).astype(np.float32) if rows else np.zeros((0, 6), np.float32),
     )
 
 
@@ -103,7 +104,7 @@ def load_detections(path, meta):
         return None
     frames = [[] for _ in range(int(data["n_frames"]))]
     for k, kp, conf, box, color in zip(data["frame"], data["kp"], data["conf"], data["box"], data["color"]):
-        col = None if np.isnan(color).any() else color.astype(float)
+        col = None if np.isnan(color).all() else color.astype(float)
         frames[int(k)].append(Detection(kp=kp.astype(float), conf=conf.astype(float), box=box.astype(float), color=col))
     return frames, float(data["fps"]), tuple(int(v) for v in data["size"])
 
@@ -142,7 +143,7 @@ def detect_frames(video_path, model_name, start_s, end_s, stride, imgsz, device,
             )
             boxes = result.boxes.xyxy.cpu().numpy()
             for kp, kc, box in zip(kps, confs, boxes):
-                dets.append(Detection(kp=kp, conf=kc, box=box, color=torso_color(frame, kp, kc)))
+                dets.append(Detection(kp=kp, conf=kc, box=box, color=appearance(frame, kp, kc, box)))
         frames.append(dets)
         if len(frames) % 200 == 0:
             print(f"{len(frames)} frames processed ({(n - first) / native_fps:.0f}s of video)", flush=True)
@@ -150,9 +151,36 @@ def detect_frames(video_path, model_name, start_s, end_s, stride, imgsz, device,
     return frames, native_fps / stride, (width, height), total / native_fps
 
 
+def needs_appearance_refresh(frames):
+    for dets in frames:
+        for d in dets:
+            if d.color is not None:
+                return len(d.color) != 6
+    return False
+
+
+def refresh_appearance(video_path, frames, start_s, stride):
+    cap = cv2.VideoCapture(str(video_path))
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(start_s * native_fps))
+    for k, dets in enumerate(frames):
+        if k:
+            for _ in range(stride - 1):
+                cap.grab()
+        ok, frame = cap.read()
+        if not ok:
+            break
+        for d in dets:
+            d.color = appearance(frame, d.kp, d.conf, d.box)
+    cap.release()
+
+
 def track_frames(frames, fps, cfg):
     tracker = FighterTracker(fps, cfg)
-    return [tracker.update(dets) for dets in frames]
+    pairs = [tracker.update(dets) for dets in frames]
+    pairs, flips = resolve_identity(pairs)
+    print(f"Shirt-brightness identity pass: {flips} order changes applied")
+    return pairs
 
 
 def update_manifest(out_dir, slug, report):
@@ -192,10 +220,12 @@ def main():
     parser.add_argument("--min-speed", type=float, default=None)
     parser.add_argument("--hit-margin", type=float, default=None)
     parser.add_argument("--jab-max-arc", type=float, default=None)
+    parser.add_argument("--min-reach", type=float, default=None)
+    parser.add_argument("--color-weight", type=float, default=None)
     args = parser.parse_args()
 
     cfg = SparringConfig()
-    for name in ("min_speed", "hit_margin", "jab_max_arc"):
+    for name in ("min_speed", "hit_margin", "jab_max_arc", "min_reach", "color_weight"):
         value = getattr(args, name)
         if value is not None:
             setattr(cfg, name, value)
@@ -223,6 +253,10 @@ def main():
         frames, fps, size = cached
         duration = (args.end if args.end is not None else (len(frames) / fps + args.start))
         print(f"Reusing cached detections ({len(frames)} frames)")
+        if needs_appearance_refresh(frames):
+            print("Refreshing appearance features from the video")
+            refresh_appearance(video_path, frames, args.start, args.stride)
+            save_detections(cache_path, frames, fps, size, meta)
     else:
         frames, fps, size, duration = detect_frames(
             video_path, args.model, args.start, args.end, args.stride, args.imgsz, args.device, args.det_conf

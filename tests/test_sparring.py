@@ -10,6 +10,7 @@ from sparring import (  # noqa: E402
     Detection,
     FighterTracker,
     SparringConfig,
+    resolve_identity,
     analyze,
     build_report,
     summarize,
@@ -197,7 +198,7 @@ def test_tracker_ignores_small_bystander():
 
 
 def test_tracker_uses_color_when_fighters_cross():
-    tracker = FighterTracker(FPS)
+    tracker = FighterTracker(FPS, SparringConfig(color_weight=1.5))
     red, blue = (0.1, 0.1, 0.9), (0.9, 0.1, 0.1)
     steps = 100
     last = None
@@ -229,3 +230,50 @@ def test_summary_and_report_shape():
     report = build_report(punches, ["orthodox", "southpaw"], ["Me", "Partner"], 30.0, 0, 60, {"title": "t"})
     assert report["fighters"][1] == {"id": "B", "label": "Partner", "stance": "southpaw"}
     assert report["counts"] == counts
+
+
+def test_long_detection_gap_does_not_blank_later_punches():
+    total = 400
+    a = make_fighter(total, 300, 1, [(300, "left", "straight"), (340, "left", "straight")])
+    b = make_fighter(total, 700, -1)
+    punches, _ = analyze(to_pairs(a, b, drop_a=set(range(50, 120))), FPS)
+    mine = [p for p in punches if p["fighter"] == "A"]
+    assert len(mine) == 2
+    assert all(p["t"] > 9.0 for p in mine)
+
+
+def test_low_confidence_wrist_gap_does_not_blank_later_frames():
+    total = 300
+    a = make_fighter(total, 300, 1, [(250, "left", "straight")])
+    b = make_fighter(total, 700, -1)
+    pairs = to_pairs(a, b)
+    for t in range(40, 90):
+        pairs[t][0].conf[L_WR] = 0.05
+    punches, _ = analyze(pairs, FPS)
+    assert len([p for p in punches if p["fighter"] == "A"]) == 1
+
+
+def test_brightness_identity_survives_crossing():
+    tracker = FighterTracker(FPS, SparringConfig(lum_weight=6.0), lum_refs=(0.05, 0.2))
+    steps = 120
+    dark_side = []
+    for t in range(steps + 1):
+        frac = t / steps
+        dark = box_det(200 + 600 * frac, color=(0.05,) * 3 + (0.3,) * 3)
+        light = box_det(800 - 600 * frac, color=(0.2,) * 3 + (0.3,) * 3)
+        out = tracker.update([light, dark])
+        dark_side.append(out[0].color[0] < 0.1 if out[0] is not None else None)
+    assert all(d for d in dark_side if d is not None)
+
+
+def test_resolve_identity_puts_darker_shirt_in_slot_zero():
+    def det(cx, shade):
+        d = box_det(cx, color=(shade,) * 3 + (0.3,) * 3)
+        return d
+    pairs = []
+    for t in range(40):
+        pairs.append([det(200, 0.2), det(800, 0.05)])  # slot 0 is the light shirt: wrong way round
+    fixed, changes = resolve_identity(pairs)
+    assert fixed[0][0].color[0] < 0.1
+    assert fixed[0][1].color[0] > 0.1
+    assert changes == 0

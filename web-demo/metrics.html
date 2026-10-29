@@ -62,7 +62,7 @@
 
   <h2>The pipeline</h2>
   <p>A pose model (YOLO11-pose) marks 17 body points on every person in every frame. The two largest people on the floor become <span class="a-dot"></span>fighter A and <span class="b-dot"></span>fighter B. Reflections in the mirror and people far in the background are smaller and get ignored.</p>
-  <p>Between frames, each fighter is matched to the same body by position and by shirt color, so identities hold when the two cross or clinch. A is whoever starts on the left.</p>
+  <p>Between frames, each fighter is matched to the same body by position. When the two stand apart, each stretch of frames is also checked by shirt brightness, so the darker shirt is always fighter A. This only works when the shirts differ clearly, and it can still slip during clinches. If the shirts look alike, A is whoever starts on the left.</p>
   <p>Distances are measured in <strong>torso lengths</strong> (shoulder midpoint to hip midpoint), not pixels. That keeps a fighter who is closer to the camera from looking faster just because they look bigger. Speeds are torso lengths per second (<code>torso/s</code>).</p>
   <p>Counts are exact lookups on the punch list. The rolling metrics are computed ahead of time, four samples per second, and the page reads the right sample as the video plays.</p>
 
@@ -75,7 +75,7 @@
       <dt>What it is</dt>
       <dd>Punches a fighter has thrown so far in the clip, counting both hands.</dd>
       <dt>How it's computed</dt>
-      <dd>For each hand, take the wrist's position relative to the shoulders, then its speed toward the opponent's head. Each clear peak in that speed is one punch. A peak has to be fast enough (at least 5 torso/s), stand out from the movement around it, and sit at least 0.18 s from the previous peak on the same hand. If both hands peak within 0.1 s, only the faster one counts.</dd>
+      <dd>For each hand, take the wrist's position relative to the shoulders, then its speed toward the opponent's head. Each clear peak in that speed is one punch. A peak has to be fast enough (at least 3.5 torso/s), stand out from the movement around it, and sit at least 0.18 s from the previous peak on the same hand. If both hands peak within 0.1 s, only the faster one counts. The arm also has to extend at least 0.65 torso lengths from the shoulder, which filters out guard shuffles and body-side movement.</dd>
       <dt>Read it as</dt>
       <dd>Volume, including punches that were blocked or missed. Feints and slow pawing jabs under the speed cutoff don't count.</dd>
     </dl>

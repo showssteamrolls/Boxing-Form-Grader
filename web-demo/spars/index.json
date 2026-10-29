@@ -1,0 +1,26 @@
+{
+  "spars": [
+    {
+      "slug": "102326_ant_ryan_r2",
+      "title": "Round 2 spar",
+      "youtube": null,
+      "video": "spars/102326_ant_ryan_r2.mp4",
+      "start": 0.0,
+      "end": 266.633,
+      "counts": {
+        "A": {
+          "thrown": 69,
+          "landed": 18,
+          "jab": 31,
+          "power": 38
+        },
+        "B": {
+          "thrown": 67,
+          "landed": 8,
+          "jab": 32,
+          "power": 35
+        }
+      }
+    }
+  ]
+}
