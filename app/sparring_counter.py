@@ -78,10 +78,22 @@ def _encode(src, dst, height, fps, crf, preset="veryfast"):
     return dst
 
 
+def _probe(src):
+    cap = cv2.VideoCapture(str(src))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    cap.release()
+    return height, fps
+
+
 def prepare_video(src, slug, out_dir):
-    """Two copies: a 720p/30fps one for analysis (kept out of git) and a 1080p/60fps one for the page."""
-    analysis = _encode(src, ROOT / "data" / "analysis" / f"{slug}.mp4", 720, 30, 27)
-    display = _encode(src, out_dir / f"{slug}.mp4", 1080, 60, 28)
+    """Two copies: a 720p/30fps one for analysis (kept out of git) and a 1080p/60fps one for the page.
+
+    Never upscales: a 360p or 30fps source keeps its own size and frame rate.
+    """
+    src_h, src_fps = _probe(src)
+    analysis = _encode(src, ROOT / "data" / "analysis" / f"{slug}.mp4", min(720, src_h), 30, 27)
+    display = _encode(src, out_dir / f"{slug}.mp4", min(1080, src_h), 60 if src_fps > 45 else 30, 28)
     return analysis, display
 
 

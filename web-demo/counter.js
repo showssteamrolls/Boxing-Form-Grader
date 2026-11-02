@@ -594,9 +594,8 @@
   }
 
   function markPicker(slug) {
-    for (const btn of picker.querySelectorAll("button")) {
-      btn.classList.toggle("active", btn.dataset.slug === slug);
-    }
+    const select = $("pcSelect");
+    if (select.value !== slug) select.value = slug;
   }
 
   async function selectSpar(slug) {
@@ -681,14 +680,15 @@
     if (wip) wip.hidden = false;
 
     if (manifest.spars.length > 1) {
+      const select = $("pcSelect");
       for (const s of manifest.spars) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = s.title;
-        btn.dataset.slug = s.slug;
-        btn.addEventListener("click", () => selectSpar(s.slug));
-        picker.appendChild(btn);
+        const opt = document.createElement("option");
+        opt.value = s.slug;
+        opt.textContent = s.title;
+        select.appendChild(opt);
       }
+      select.addEventListener("change", () => selectSpar(select.value));
+      picker.hidden = false;
     }
 
     const wanted = new URLSearchParams(location.search).get("spar");
