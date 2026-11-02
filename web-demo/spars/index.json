@@ -43,6 +43,28 @@
           "power": 55
         }
       }
+    },
+    {
+      "slug": "110126_ant_alvin_r2",
+      "title": "Ant & Alvin R2",
+      "youtube": null,
+      "video": "spars/110126_ant_alvin_r2.mp4",
+      "start": 0.0,
+      "end": 312.0,
+      "counts": {
+        "A": {
+          "thrown": 157,
+          "landed": 0,
+          "jab": 51,
+          "power": 106
+        },
+        "B": {
+          "thrown": 107,
+          "landed": 2,
+          "jab": 53,
+          "power": 54
+        }
+      }
     }
   ]
 }
