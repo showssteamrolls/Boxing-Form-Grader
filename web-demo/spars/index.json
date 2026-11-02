@@ -10,13 +10,13 @@
       "counts": {
         "A": {
           "thrown": 68,
-          "landed": 3,
+          "landed": 2,
           "jab": 38,
           "power": 30
         },
         "B": {
           "thrown": 70,
-          "landed": 3,
+          "landed": 1,
           "jab": 28,
           "power": 42
         }

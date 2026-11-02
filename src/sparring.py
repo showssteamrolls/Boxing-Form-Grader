@@ -32,7 +32,7 @@ class SparringConfig:
     jab_max_arc: float = 0.25
     span_back_s: float = 0.4
     span_forward_s: float = 0.25
-    head_radius: float = 0.30      # head target, in opponent torso lengths around the nose
+    head_radius: float = 0.22      # head target, in opponent torso lengths around the nose
     torso_scale: float = 1.10      # torso target: shoulder-hip quad scaled about its center
     shoulder_clear: float = 0.20   # contacts this close to a shoulder count as shoulder hits
     mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it

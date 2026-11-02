@@ -125,22 +125,16 @@ def test_slow_arm_movement_is_ignored():
     assert punches == []
 
 
+def aimed_at_head(total, punches):
+    a = make_fighter(total, 300, 1, punches)
+    a[:, L_WR, 1] = 172  # jab travels at head height
+    return a
+
+
 def test_landed_depends_on_distance_to_opponent():
     total = 80
-    far = analyze(
-        to_pairs(
-            make_fighter(total, 300, 1, [(20, "left", "straight")]),
-            make_fighter(total, 700, -1),
-        ),
-        FPS,
-    )[0]
-    near = analyze(
-        to_pairs(
-            make_fighter(total, 300, 1, [(20, "left", "straight")]),
-            make_fighter(total, 420, -1),
-        ),
-        FPS,
-    )[0]
+    far = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 700, -1)), FPS)[0]
+    near = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 420, -1)), FPS)[0]
     assert len(far) == 1 and far[0]["landed"] is False
     assert len(near) == 1 and near[0]["landed"] is True
 
@@ -344,12 +338,11 @@ def test_mutual_landings_keep_only_the_faster_punch():
 
 def test_fighters_at_different_depths_do_not_land():
     total = 80
-    near = analyze(
-        to_pairs(make_fighter(total, 300, 1, [(20, "left", "straight")]), make_fighter(total, 420, -1)),
-        FPS,
-    )[0]
+    near = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 420, -1)), FPS)[0]
     assert near[0]["landed"] is True
     b = make_fighter(total, 420, -1)
     b[:, :, 1] -= 80  # same image position but far deeper in the scene: boxes sit much higher
-    deep = analyze(to_pairs(make_fighter(total, 300, 1, [(20, "left", "straight")]), b), FPS)[0]
+    a = aimed_at_head(total, [(20, "left", "straight")])
+    a[:, L_WR, 1] = 92
+    deep = analyze(to_pairs(a, b), FPS)[0]
     assert deep[0]["landed"] is False

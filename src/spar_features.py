@@ -214,6 +214,6 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
             rows.append(flat)
         pose[fid] = rows
     pose["headr"] = {
-        fid: round(0.30 * float(analysis["torsos"][i]) / width * 1000, 1) for i, fid in enumerate(FIGHTER_IDS)
+        fid: round(0.22 * float(analysis["torsos"][i]) / width * 1000, 1) for i, fid in enumerate(FIGHTER_IDS)
     }
     return pose
