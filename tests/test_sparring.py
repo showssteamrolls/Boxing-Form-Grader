@@ -13,6 +13,7 @@ from sparring import (  # noqa: E402
     _landed,
     _resolve_mutual_landings,
     head_center,
+    head_ellipse,
     resolve_identity,
     analyze,
     build_report,
@@ -66,6 +67,7 @@ def make_fighter(total, x, facing, punches=(), noise=0.0, seed=0, slow=False):
 def to_pairs(kp_a, kp_b, drop_a=(), drop_b=()):
     total = kp_a.shape[0]
     conf = np.ones(17)
+    conf[[1, 2, 3, 4, 7, 8]] = 0  # the synthetic fighters have no eyes, ears or elbows
     pairs = []
     for t in range(total):
         pair = []
@@ -346,3 +348,42 @@ def test_fighters_at_different_depths_do_not_land():
     a[:, L_WR, 1] = 92
     deep = analyze(to_pairs(a, b), FPS)[0]
     assert deep[0]["landed"] is False
+
+
+def face_kp(nose_rise):
+    """Upright torso (length 100, shoulders at y=200); the nose sits nose_rise torso lengths above the shoulders."""
+    kp = np.full((17, 2), np.nan)
+    kp[L_SH], kp[R_SH] = (480, 200), (520, 200)
+    kp[L_HIP], kp[R_HIP] = (480, 300), (520, 300)
+    ny = 200 - nose_rise * 100
+    kp[0] = (500, ny)
+    kp[1], kp[2] = (490, ny - 12), (510, ny - 12)
+    kp[3], kp[4] = (475, ny - 8), (525, ny - 8)
+    return kp
+
+
+def test_face_target_shrinks_when_the_chin_tucks():
+    up = head_ellipse(face_kp(0.55), 100.0, ref_rise=0.55)
+    down = head_ellipse(face_kp(0.30), 100.0, ref_rise=0.55)
+    assert down[3] < up[3] * 0.8  # shorter
+    assert abs(down[2] - up[2]) < 12  # width follows the ears, which did not move
+
+
+def test_face_target_covers_forehead_through_chin():
+    cx, cy, rx, ry = head_ellipse(face_kp(0.55), 100.0, ref_rise=0.55)
+    eyes_y = 145 - 12
+    assert cy - ry < eyes_y - 15 and cy + ry > 145 + 10  # forehead above the eyes, chin below the nose
+
+
+def test_face_target_ignores_a_glove_mistaken_for_an_ear():
+    kp = face_kp(0.55)
+    kp[3] = (300, 150)
+    cx, cy, rx, ry = head_ellipse(kp, 100.0, ref_rise=0.55)
+    assert abs(cx - 500) < 30
+
+
+def test_landed_ignores_a_parry_on_the_glove_in_front_of_the_face():
+    # glove lands inside the face zone but right on the opponent's raised glove
+    assert not hits((484, 176), wrist_l=(488, 180), wrist_r=(530, 140))
+    # the same spot with the guard dropped is a hit
+    assert hits((484, 176), wrist_l=(470, 260), wrist_r=(530, 260), elbow_l=(470, 280), elbow_r=(530, 280))

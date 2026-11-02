@@ -383,20 +383,20 @@
         const pa = pt(a), pb = pt(b);
         if (pa && pb) drawBone(pa, pb);
       }
-      // head: the same fixed-size circle the landed check uses, so a glove over the face can't shrink it
-      const hx = row[18], hy = row[19];
-      if (hx >= 0 && pose.headr && pose.headr[id]) {
+      // face target: the same ellipse the landed check uses (forehead, eyes, chin across to the ears)
+      const hx = row[18], hy = row[19], hrx = row[20], hry = row[21];
+      if (hx >= 0 && hrx > 0) {
         const cx = (hx / 1000) * w, cy = (hy / 1000) * h;
-        const r = (pose.headr[id] / 1000) * w;
+        const rx = (hrx / 1000) * w, ry = (hry / 1000) * w;
         ctx.lineWidth = 1 * dpr;
         ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(cx - r * 1.5, cy); ctx.lineTo(cx - r * 0.6, cy);
-        ctx.moveTo(cx + r * 0.6, cy); ctx.lineTo(cx + r * 1.5, cy);
-        ctx.moveTo(cx, cy - r * 1.5); ctx.lineTo(cx, cy - r * 0.6);
-        ctx.moveTo(cx, cy + r * 0.6); ctx.lineTo(cx, cy + r * 1.5);
+        ctx.moveTo(cx - rx * 1.4, cy); ctx.lineTo(cx - rx * 0.6, cy);
+        ctx.moveTo(cx + rx * 0.6, cy); ctx.lineTo(cx + rx * 1.4, cy);
+        ctx.moveTo(cx, cy - ry * 1.4); ctx.lineTo(cx, cy - ry * 0.6);
+        ctx.moveTo(cx, cy + ry * 0.6); ctx.lineTo(cx, cy + ry * 1.4);
         ctx.stroke();
       }
       // landed-punch flash: the arm that connected glows green and fades

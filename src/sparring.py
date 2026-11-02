@@ -16,6 +16,8 @@ L_WRIST = 9
 R_WRIST = 10
 L_HIP = 11
 R_HIP = 12
+L_EYE, R_EYE, L_EAR, R_EAR = 1, 2, 3, 4
+FACE_POINTS = [NOSE, L_EYE, R_EYE, L_EAR, R_EAR]
 TORSO_POINTS = [L_SHOULDER, R_SHOULDER, L_HIP, R_HIP]
 WRIST = {"left": L_WRIST, "right": R_WRIST}
 FIGHTER_IDS = ("A", "B")
@@ -37,6 +39,7 @@ class SparringConfig:
     shoulder_clear: float = 0.20   # contacts this close to a shoulder count as shoulder hits
     mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it
     depth_tol: float = 0.6         # max feet-line gap, in torso lengths, for two fighters to count as in reach
+    glove_clear: float = 0.20      # contacts this close to the opponent's glove count as parries
     arm_clear: float = 0.12        # contacts this close to an upper arm or forearm count as arm hits
     match_max_cost: float = 2.0
     color_weight: float = 0.0
@@ -280,48 +283,39 @@ def identity_score(det):
     return (red if red is not None else 0.0) + (2.0 * (0.25 - lum) if lum is not None else 0.0)
 
 
-def resolve_identity(pairs, min_margin=0.10, min_len=5, overlap_iou=0.02):
+def resolve_identity(pairs, min_margin=0.08, window=15):
     """Fix fighter swaps from appearance. Slot 0 becomes the fighter with the redder gloves and darker top.
 
-    Frames are cut into stretches where both boxes are visible and apart, so the tracker could not
-    have swapped inside them. A stretch whose two fighters clearly differ in appearance is forced into
-    the right order; unclear stretches keep whatever order the tracker had.
+    Every frame with both fighters gets a margin: how much more "red glove, dark top" slot 0 looks
+    than slot 1. The margin is median-smoothed over about half a second. Where it is clearly
+    positive the order is kept, where it is clearly negative the two are swapped, and where it is
+    unclear the previous frame's decision holds. This also repairs swaps inside clinches.
     """
     n = len(pairs)
-    apart = np.zeros(n, bool)
+    margin = np.full(n, np.nan)
     for k, p in enumerate(pairs):
-        apart[k] = p[0] is not None and p[1] is not None and _iou(p[0].box, p[1].box) <= overlap_iou
-    stretches, start = [], None
-    for k in range(n + 1):
-        ok = apart[k] if k < n else False
-        if ok and start is None:
-            start = k
-        elif not ok and start is not None:
-            if k - start >= min_len:
-                stretches.append((start, k))
-            start = None
-    flips = []
-    for s, e in stretches:
-        med = []
-        for slot in (0, 1):
-            vals = [identity_score(pairs[k][slot]) for k in range(s, e)]
-            vals = [v for v in vals if v is not None]
-            med.append(float(np.median(vals)) if vals else None)
-        if None in med or abs(med[0] - med[1]) < min_margin:
-            flips.append(None)
-        else:
-            flips.append(med[1] > med[0])
-    if all(f is None for f in flips):
+        a, b = identity_score(p[0]), identity_score(p[1])
+        if a is not None and b is not None:
+            margin[k] = a - b
+    if not np.isfinite(margin).any():
         return pairs, 0
-    current = next(f for f in flips if f is not None)
+    half = window // 2
+    smooth = np.full(n, np.nan)
+    for k in range(n):
+        w = margin[max(0, k - half): k + half + 1]
+        w = w[np.isfinite(w)]
+        if len(w) >= 3:
+            smooth[k] = np.median(w)
     state = np.zeros(n, bool)
-    cursor = 0
-    for (s, e), f in zip(stretches, flips):
-        if f is not None:
-            current = f
-        state[cursor:e] = current
-        cursor = e
-    state[cursor:] = current
+    current = None
+    first = next((k for k in range(n) if np.isfinite(smooth[k]) and abs(smooth[k]) >= min_margin), None)
+    if first is None:
+        return pairs, 0
+    current = smooth[first] < 0
+    for k in range(n):
+        if np.isfinite(smooth[k]) and abs(smooth[k]) >= min_margin:
+            current = smooth[k] < 0
+        state[k] = current
     out = [[p[1], p[0]] if state[k] else list(p) for k, p in enumerate(pairs)]
     changed = int(np.sum(state[1:] != state[:-1]))
     return out, changed
@@ -538,6 +532,88 @@ def head_center(kp, torso):
     return axis
 
 
+HEAD_W = 0.42   # upright head width, in torso lengths
+HEAD_H = 0.52   # upright head height (forehead to chin), in torso lengths
+
+
+def _torso_frame(kp):
+    sh = kp[[L_SHOULDER, R_SHOULDER]]
+    hp = kp[[L_HIP, R_HIP]]
+    if np.isnan(sh).any() or np.isnan(hp).any():
+        return None
+    mid = sh.mean(axis=0)
+    up = mid - hp.mean(axis=0)
+    norm = float(np.linalg.norm(up))
+    if norm < 1e-6:
+        return None
+    return mid, up / norm
+
+
+def head_rise(kp, torso):
+    """How high the nose sits above the shoulders, in torso lengths. Drops when the chin tucks."""
+    frame = _torso_frame(kp)
+    nose = kp[NOSE]
+    if frame is None or np.isnan(nose).any():
+        return np.nan
+    mid, up = frame
+    return float((nose - mid) @ up) / torso
+
+
+def head_ellipse(kp, torso, ref_rise):
+    """Face target (cx, cy, half_width, half_height) in pixels, or None without a torso.
+
+    Built from the nose, eyes and ears: it spans forehead, eyes and chin across to the ears. Chin
+    down brings the nose closer to the shoulders, which shrinks the height. Points that sit
+    far from where a head can be (a glove mistaken for an ear) are ignored.
+    """
+    frame = _torso_frame(kp)
+    if frame is None:
+        return None
+    mid, up = frame
+    anchor = mid + up * 0.45 * torso
+    pts = {}
+    for name, j in (("nose", NOSE), ("le", L_EYE), ("re", R_EYE), ("lr", L_EAR), ("rr", R_EAR)):
+        p = kp[j]
+        if not np.isnan(p).any() and np.linalg.norm(p - anchor) <= 0.6 * torso:
+            pts[name] = p
+    rise = head_rise(kp, torso) if "nose" in pts else np.nan
+    scale = 1.0 if np.isnan(rise) else float(np.clip(rise / ref_rise, 0.65, 1.0))
+    height = HEAD_H * torso * scale
+    width = HEAD_W * torso
+    if "lr" in pts and "rr" in pts:
+        width = float(np.clip(np.linalg.norm(pts["lr"] - pts["rr"]) * 1.25, 0.55 * width, 1.15 * width))
+    elif "le" in pts and "re" in pts:
+        width = float(np.clip(np.linalg.norm(pts["le"] - pts["re"]) * 2.5, 0.55 * width, 1.15 * width))
+    else:
+        width *= 0.8
+    eyes = [pts[k] for k in ("le", "re") if k in pts]
+    if eyes:
+        eye_y = float(np.mean([e[1] for e in eyes]))
+    elif "nose" in pts:
+        eye_y = float(pts["nose"][1] - 0.2 * height)
+    else:
+        eye_y = float(anchor[1])
+    cx = float(np.mean([p[0] for p in pts.values()])) if pts else float(anchor[0])
+    cy = eye_y + 0.05 * height
+    return cx, cy, width / 2.0, height / 2.0
+
+
+def head_series(track, torso):
+    """Per-frame face ellipses (n, 4), smoothed, with short gaps held. NaN where nothing is known."""
+    kp = track.kp
+    rises = np.array([head_rise(kp[k], torso) for k in range(len(kp))])
+    ref = float(np.clip(np.nanpercentile(rises, 85), 0.3, 0.8)) if np.isfinite(rises).sum() > 10 else 0.5
+    out = np.full((len(kp), 4), np.nan)
+    for k in range(len(kp)):
+        e = head_ellipse(kp[k], torso, ref)
+        if e is not None:
+            out[k] = e
+    out = _nan_smooth(out, size=5)
+    for c in range(4):
+        out[:, c] = _interp_short_gaps(out[:, c], 15)
+    return out
+
+
 def _seg_dist(p, a, b):
     ab = b - a
     denom = float(ab @ ab)
@@ -575,38 +651,49 @@ def _same_depth(me, opp, lo, hi, torso, cfg):
     return float(np.median(gap)) <= cfg.depth_tol
 
 
-def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg):
-    """True if the wrist reaches the opponent's head or torso, and not an arm or shoulder.
+def _on_guard(kp, w, torso, cfg):
+    """True if the contact point sits on the opponent's glove or arm (a parry or block)."""
+    for wr in (L_WRIST, R_WRIST):
+        p = kp[wr]
+        if not np.isnan(p).any() and np.linalg.norm(w - p) <= cfg.glove_clear * torso:
+            return True
+    for sh, el, wr in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
+        for a, b in ((sh, el), (el, wr)):
+            pa, pb = kp[a], kp[b]
+            if np.isnan(pa).any() or np.isnan(pb).any():
+                continue
+            if _seg_dist(w, pa, pb) <= cfg.arm_clear * torso:
+                return True
+    return False
 
-    Head: a circle around the nose. Torso: the shoulder-hip quad, scaled up a little. A contact in
-    the torso zone is dropped when it sits within shoulder_clear of a shoulder point or within
-    arm_clear of the opponent's upper arm or forearm (a block or an arm hit).
+
+def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None):
+    """True if the wrist reaches the opponent's face or torso, and not a glove, arm or shoulder.
+
+    Face: the ellipse from forehead and eyes down to the chin, across to the ears. Torso: the
+    shoulder-hip quad, scaled up a little. A contact is dropped when it sits on the opponent's glove
+    or arm, or (in the torso) within shoulder_clear of a shoulder. That covers parries, blocks and arm hits.
     """
     for k in range(lo, min(len(wrist_xy), hi + 1)):
         w = wrist_xy[k]
         if np.isnan(w).any():
             continue
         kp = opp.kp[k]
-        head = head_center(kp, opp_torso)
-        if head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso:
-            return True
+        in_head = False
+        if heads is not None and k < len(heads) and np.isfinite(heads[k]).all():
+            cx, cy, rx, ry = heads[k]
+            in_head = ((w[0] - cx) / rx) ** 2 + ((w[1] - cy) / ry) ** 2 <= 1.0
+        else:
+            head = head_center(kp, opp_torso)
+            in_head = head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso
+        in_torso = False
         quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
-        if np.isnan(quad).any():
-            continue
-        center = quad.mean(axis=0)
-        if not _in_quad(w, center + (quad - center) * cfg.torso_scale):
-            continue
-        if min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso:
-            continue
-        on_arm = False
-        for sh, el, wr in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
-            for a, b in ((sh, el), (el, wr)):
-                pa, pb = kp[a], kp[b]
-                if np.isnan(pa).any() or np.isnan(pb).any():
-                    continue
-                if _seg_dist(w, pa, pb) <= cfg.arm_clear * opp_torso:
-                    on_arm = True
-        if not on_arm:
+        if not np.isnan(quad).any():
+            center = quad.mean(axis=0)
+            in_torso = _in_quad(w, center + (quad - center) * cfg.torso_scale)
+            if in_torso and min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso:
+                in_torso = False
+        if (in_head or in_torso) and not _on_guard(kp, w, opp_torso, cfg):
             return True
     return False
 
@@ -625,10 +712,11 @@ def _dedupe(events, gap_s):
 def analyze_full(pairs, fps, cfg=None, start_s=0.0):
     cfg = cfg or SparringConfig()
     if len(pairs) < 3:
-        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None}
+        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None, "heads": None}
     tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
     torsos = [torso_length(t) for t in tracks]
     leads = [lead_series(tracks[i], tracks[1 - i], torsos[i], fps) for i in (0, 1)]
+    heads = [head_series(tracks[i], torsos[i]) for i in (0, 1)]
     stances = ["orthodox" if float(leads[i].mean()) >= 0.5 else "southpaw" for i in (0, 1)]
     punches = []
     for i in (0, 1):
@@ -653,7 +741,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                         "hand": side,
                         "lead": bool(is_lead),
                         "type": "jab" if is_jab else "power",
-                        "landed": bool(in_depth and _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg)),
+                        "landed": bool(in_depth and _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg, heads[1 - i])),
                         "speed": round(float(approach[peak]), 1),
                         "reach": round(reach, 2),
                     }
@@ -661,7 +749,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
         punches.extend(_dedupe(events, cfg.cross_hand_gap_s))
     punches.sort(key=lambda e: e["t"])
     _resolve_mutual_landings(punches, cfg.mutual_gap_s)
-    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads}
+    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads, "heads": heads}
 
 
 def _resolve_mutual_landings(punches, gap_s):

@@ -4,7 +4,6 @@ import numpy as np
 
 from sparring import (
     FIGHTER_IDS,
-    head_center,
     L_ELBOW,
     L_HIP,
     L_SHOULDER,
@@ -200,20 +199,22 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
                 rows.append(None)
                 continue
             flat = []
-            head = head_center(tracks[i].kp[k], float(analysis["torsos"][i]))
+            head = analysis["heads"][i][k]
             for x, y in pts:
                 if np.isnan(x) or np.isnan(y):
                     flat.extend([-1, -1])
                 else:
                     flat.append(int(round(x / width * 1000)))
                     flat.append(int(round(y / height * 1000)))
-            if head is None or np.isnan(head).any():
-                flat.extend([-1, -1])
+            if np.isnan(head).any():
+                flat.extend([-1, -1, 0, 0])
             else:
-                flat.extend([int(round(head[0] / width * 1000)), int(round(head[1] / height * 1000))])
+                flat.extend([
+                    int(round(head[0] / width * 1000)),
+                    int(round(head[1] / height * 1000)),
+                    int(round(head[2] / width * 1000)),
+                    int(round(head[3] / width * 1000)),
+                ])
             rows.append(flat)
         pose[fid] = rows
-    pose["headr"] = {
-        fid: round(0.22 * float(analysis["torsos"][i]) / width * 1000, 1) for i, fid in enumerate(FIGHTER_IDS)
-    }
     return pose

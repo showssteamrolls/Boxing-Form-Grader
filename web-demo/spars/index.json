@@ -9,16 +9,16 @@
       "end": 266.633,
       "counts": {
         "A": {
-          "thrown": 68,
+          "thrown": 70,
           "landed": 2,
-          "jab": 38,
-          "power": 30
+          "jab": 34,
+          "power": 36
         },
         "B": {
-          "thrown": 70,
-          "landed": 1,
-          "jab": 28,
-          "power": 42
+          "thrown": 69,
+          "landed": 0,
+          "jab": 29,
+          "power": 40
         }
       }
     }
