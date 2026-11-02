@@ -10,13 +10,13 @@
       "counts": {
         "A": {
           "thrown": 70,
-          "landed": 2,
+          "landed": 6,
           "jab": 34,
           "power": 36
         },
         "B": {
           "thrown": 69,
-          "landed": 0,
+          "landed": 1,
           "jab": 29,
           "power": 40
         }
@@ -32,13 +32,13 @@
       "counts": {
         "A": {
           "thrown": 59,
-          "landed": 8,
+          "landed": 10,
           "jab": 18,
           "power": 41
         },
         "B": {
           "thrown": 87,
-          "landed": 2,
+          "landed": 8,
           "jab": 32,
           "power": 55
         }
@@ -54,13 +54,13 @@
       "counts": {
         "A": {
           "thrown": 157,
-          "landed": 0,
+          "landed": 4,
           "jab": 51,
           "power": 106
         },
         "B": {
           "thrown": 107,
-          "landed": 2,
+          "landed": 5,
           "jab": 53,
           "power": 54
         }

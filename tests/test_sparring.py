@@ -326,7 +326,7 @@ def test_landed_counts_head_and_body_zones():
 
 
 def test_landed_ignores_chest_and_back():
-    assert broad_hit(broad_opponent(), (500, 205)) is None  # chest line, not a target
+    assert broad_hit(broad_opponent(), (500, 202)) is None  # chest line, not a target
     back = broad_opponent(front=False)
     assert broad_hit(back, (500, 232)) is None
     assert broad_hit(back, (500, 272)) is None

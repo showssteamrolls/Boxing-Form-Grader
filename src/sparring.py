@@ -20,6 +20,7 @@ L_EYE, R_EYE, L_EAR, R_EAR = 1, 2, 3, 4
 FACE_POINTS = [NOSE, L_EYE, R_EYE, L_EAR, R_EAR]
 TORSO_POINTS = [L_SHOULDER, R_SHOULDER, L_HIP, R_HIP]
 WRIST = {"left": L_WRIST, "right": R_WRIST}
+ELBOW = {"left": L_ELBOW, "right": R_ELBOW}
 FIGHTER_IDS = ("A", "B")
 
 
@@ -37,15 +38,16 @@ class SparringConfig:
     head_radius: float = 0.22      # head target, in opponent torso lengths around the nose
     mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it
     depth_tol: float = 0.6         # max feet-line gap, in torso lengths, for two fighters to count as in reach
-    glove_clear: float = 0.20      # contacts this close to the opponent's glove count as parries
-    arm_clear: float = 0.12        # contacts this close to an upper arm or forearm count as arm hits
+    glove_clear: float = 0.15      # contacts this close to the opponent's glove count as parries
+    arm_clear: float = 0.08        # contacts this close to an upper arm or forearm count as arm hits
     match_max_cost: float = 2.0
     color_weight: float = 0.0
     min_color_sep: float = 0.04
     learn_frames: int = 45
     min_reach: float = 0.65
     lum_weight: float = 0.0
-    zone_pad: float = 0.05         # glove radius added around each body zone, in torso lengths
+    glove_ext: float = 0.18        # the glove reaches this far past the wrist along the forearm, in torso lengths
+    zone_pad: float = 0.12         # glove radius added around each body zone, in torso lengths
 
 
 @dataclass
@@ -617,10 +619,10 @@ def head_series(track, torso):
 # + = the fighter's right), b runs from the hip line (0) to the shoulder line (1), wz is half-width as a
 # share of body half-width, hb is half-height in torso lengths. Chest is left out on purpose.
 ZONES = (
-    ("solar_plexus", 0.0, 0.68, 0.22, 0.09),
-    ("liver", 0.50, 0.52, 0.24, 0.11),
-    ("spleen", -0.58, 0.55, 0.22, 0.11),
-    ("core", 0.0, 0.28, 0.34, 0.14),
+    ("solar_plexus", 0.0, 0.66, 0.30, 0.12),
+    ("liver", 0.50, 0.50, 0.32, 0.14),
+    ("spleen", -0.58, 0.52, 0.30, 0.14),
+    ("core", 0.0, 0.28, 0.40, 0.16),
 )
 ZONE_NAMES = tuple(z[0] for z in ZONES)
 ZONE_COLS = 6   # cx, cy, rx, ry, tilt (radians), hittable (0 or 1)
@@ -688,10 +690,10 @@ def zone_series(track, torso, opp_track):
             depth = 0.7 * half
             cx = hips[k, 0] + b * up[k, 0] + half * np.sin(psi) * -np.cos(phi[k]) + depth * np.cos(psi) * np.sin(phi[k])
             cy = hips[k, 1] + b * up[k, 1]
-            rx = max(0.09 * torso, wz * (half * abs(np.cos(phi[k])) + depth * abs(np.sin(phi[k]))))
+            rx = max(0.18 * torso, wz * (half * abs(np.cos(phi[k])) + depth * abs(np.sin(phi[k]))))
             ry = hb * length
             chi = phi[k] - psi
-            hittable = (toward[k] * np.sin(chi) > 0.2) or (np.cos(chi) > 0.6)
+            hittable = (toward[k] * np.sin(chi) > 0.5) or (np.cos(chi) > 0.6)
             out[k, zi] = (cx, cy, rx, ry, tilt[k], 1.0 if hittable else 0.0)
     for zi in range(len(ZONES)):
         for c in range(5):
@@ -822,6 +824,11 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
         for side in ("left", "right"):
             peaks, approach, rel = _detect(me, opp, side, torsos[i], fps, cfg)
             wrist_xy = me.kp[:, WRIST[side]]
+            elbow_xy = me.kp[:, ELBOW[side]]
+            fore = wrist_xy - elbow_xy
+            norm = np.linalg.norm(fore, axis=1, keepdims=True)
+            tip_xy = np.where(np.isnan(fore).any(axis=1, keepdims=True) | (norm < 1e-6), wrist_xy,
+                              wrist_xy + fore / np.maximum(norm, 1e-6) * cfg.glove_ext * torsos[i])
             for peak in peaks:
                 peak = int(peak)
                 lo, hi = _movement_span(approach, rel, peak, fps, cfg)
@@ -831,7 +838,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
                 in_depth = _same_depth(me, opp, peak, hi, torsos[i], cfg)
-                target = _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg, heads[1 - i], zones[1 - i]) if in_depth else None
+                target = _landed(opp, torsos[1 - i], tip_xy, peak, hi, cfg, heads[1 - i], zones[1 - i]) if in_depth else None
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),
