@@ -91,9 +91,9 @@
       <dt>What it is</dt>
       <dd>Thrown punches where the glove reached the opponent.</dd>
       <dt>How it's computed</dt>
-      <dd>From the moment of peak speed until the arm is fully out, check whether the wrist comes inside the opponent's head-and-torso zone: the box around their nose, shoulders and hips, widened by 0.35 of their torso length on each side.</dd>
+      <dd>From the moment of peak speed until the arm is fully out, check whether the wrist reaches the opponent's head or torso. The head is a circle around the nose, 0.3 of their torso length in radius. The torso is the shoulder-to-hip area, scaled up 10%. Contact is thrown out if it lands within 0.2 torso lengths of a shoulder, or within 0.12 of either of their upper arms or forearms.</dd>
       <dt>Read it as</dt>
-      <dd>"Reached the target area." A punch caught on a glove or forearm still counts, because from one camera a block and a hit look the same. Treat the number as an upper bound on clean hits. It is best for comparing the two fighters under the same conditions, less so for quoting as a CompuBox-style stat.</dd>
+      <dd>"Reached the head or torso, not an arm or shoulder." Punches that hit a guarding arm are not counted, which also removes most blocks. A glove covering the face can still pass for a hit, because from one camera a block and a hit can look the same. Treat the number as an upper bound on clean hits. It is best for comparing the two fighters under the same conditions, less so for quoting as a CompuBox-style stat.</dd>
     </dl>
   </div>
 
@@ -233,7 +233,7 @@
 
   <h2 id="limits">What it can't tell you</h2>
   <ul class="limits">
-    <li><strong>Blocks look like hits.</strong> One camera can't see whether a glove touched a face or a forearm. Landed and land rate are generous.</li>
+    <li><strong>Blocks can look like hits.</strong> Arm and shoulder contact is excluded, but one camera can't always tell a glove on the face from a glove just in front of it. Landed and land rate lean generous, and they can miss hits that arrive behind a raised guard.</li>
     <li><strong>Depth is flat.</strong> A punch that passes in front of the opponent's head in the image but not through it can count as landed. Side-on footage works best.</li>
     <li><strong>Hidden limbs get guessed.</strong> If an arm is behind a body or a glove is out of frame for a moment, short gaps (a quarter second or less) are filled in. Longer gaps leave that stretch blank, and punches inside it are missed.</li>
     <li><strong>Clinches are hard.</strong> When the two bodies overlap, the pose model may confuse limbs. Counts during a clinch deserve less trust.</li>

@@ -32,7 +32,10 @@ class SparringConfig:
     jab_max_arc: float = 0.25
     span_back_s: float = 0.4
     span_forward_s: float = 0.25
-    hit_margin: float = 0.35
+    head_radius: float = 0.30      # head target, in opponent torso lengths around the nose
+    torso_scale: float = 1.10      # torso target: shoulder-hip quad scaled about its center
+    shoulder_clear: float = 0.20   # contacts this close to a shoulder count as shoulder hits
+    arm_clear: float = 0.12        # contacts this close to an upper arm or forearm count as arm hits
     match_max_cost: float = 2.0
     color_weight: float = 0.0
     min_color_sep: float = 0.04
@@ -484,15 +487,60 @@ def _reach(me, side, lo, hi, torso):
     return float(np.nanmax(d)) if np.isfinite(d).any() else 0.0
 
 
-def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg):
-    margin = cfg.hit_margin * opp_torso
-    for k in range(lo, min(len(wrist_xy), hi + 1)):
-        pts = opp.kp[k][[NOSE] + TORSO_POINTS]
-        pts = pts[~np.isnan(pts).any(axis=1)]
-        w = wrist_xy[k]
-        if len(pts) < 2 or np.isnan(w).any():
+def _seg_dist(p, a, b):
+    ab = b - a
+    denom = float(ab @ ab)
+    t = 0.0 if denom < 1e-9 else float(np.clip((p - a) @ ab / denom, 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def _in_quad(p, quad):
+    sign = 0
+    for i in range(4):
+        a, b = quad[i], quad[(i + 1) % 4]
+        cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+        if abs(cross) < 1e-9:
             continue
-        if np.all(w >= pts.min(axis=0) - margin) and np.all(w <= pts.max(axis=0) + margin):
+        cur = 1 if cross > 0 else -1
+        if sign == 0:
+            sign = cur
+        elif cur != sign:
+            return False
+    return True
+
+
+def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg):
+    """True if the wrist reaches the opponent's head or torso, and not an arm or shoulder.
+
+    Head: a circle around the nose. Torso: the shoulder-hip quad, scaled up a little. A contact in
+    the torso zone is dropped when it sits within shoulder_clear of a shoulder point or within
+    arm_clear of the opponent's upper arm or forearm (a block or an arm hit).
+    """
+    for k in range(lo, min(len(wrist_xy), hi + 1)):
+        w = wrist_xy[k]
+        if np.isnan(w).any():
+            continue
+        kp = opp.kp[k]
+        nose = kp[NOSE]
+        if not np.isnan(nose).any() and np.linalg.norm(w - nose) <= cfg.head_radius * opp_torso:
+            return True
+        quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
+        if np.isnan(quad).any():
+            continue
+        center = quad.mean(axis=0)
+        if not _in_quad(w, center + (quad - center) * cfg.torso_scale):
+            continue
+        if min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso:
+            continue
+        on_arm = False
+        for sh, el, wr in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
+            for a, b in ((sh, el), (el, wr)):
+                pa, pb = kp[a], kp[b]
+                if np.isnan(pa).any() or np.isnan(pb).any():
+                    continue
+                if _seg_dist(w, pa, pb) <= cfg.arm_clear * opp_torso:
+                    on_arm = True
+        if not on_arm:
             return True
     return False
 

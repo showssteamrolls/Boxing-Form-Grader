@@ -66,7 +66,7 @@ python app/sparring_counter.py --url "https://youtu.be/VIDEO_ID" --title "Spar 1
 ```
 
 - `--label-a` is whoever is on the left at the start, `--label-b` the right
-- Pose detections are cached in `data/pose_cache/`, so retuning `--min-speed`, `--hit-margin` or `--jab-max-arc` reruns in seconds. `--redetect` forces a fresh pass
+- Pose detections are cached in `data/pose_cache/`, so retuning `--min-speed`, `--arm-clear` or `--jab-max-arc` reruns in seconds. `--redetect` forces a fresh pass
 - Output: `web-demo/spars/<id>.json` (punches + 4 Hz metric series), `<id>.pose.json` (skeleton overlay), and `index.json` listing every spar
 - Raw downloads land in `data/raw_footage/` (gitignored)
 

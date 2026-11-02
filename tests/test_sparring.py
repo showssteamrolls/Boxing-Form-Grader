@@ -10,6 +10,7 @@ from sparring import (  # noqa: E402
     Detection,
     FighterTracker,
     SparringConfig,
+    _landed,
     resolve_identity,
     analyze,
     build_report,
@@ -277,3 +278,38 @@ def test_resolve_identity_puts_darker_shirt_in_slot_zero():
     assert fixed[0][0].color[0] < 0.1
     assert fixed[0][1].color[0] > 0.1
     assert changes == 0
+
+
+def opponent(elbow_l=(485, 250), elbow_r=(515, 250), wrist_l=(480, 215), wrist_r=(520, 215)):
+    """Single-frame opponent facing left: nose (480,170), shoulders y=200, hips y=300, torso length 100."""
+    kp = np.zeros((1, 17, 2))
+    kp[0, 0] = (480, 170)
+    kp[0, L_SH] = (480, 200)
+    kp[0, R_SH] = (520, 200)
+    kp[0, L_HIP] = (480, 300)
+    kp[0, R_HIP] = (520, 300)
+    kp[0, 7], kp[0, 8] = elbow_l, elbow_r
+    kp[0, L_WR], kp[0, R_WR] = wrist_l, wrist_r
+    return type("Opp", (), {"kp": kp})()
+
+
+def hits(wrist, **kw):
+    return _landed(opponent(**kw), 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig())
+
+
+def test_landed_counts_head_and_torso():
+    assert hits((482, 172))  # on the face
+    assert hits((500, 255), wrist_l=(470, 140), wrist_r=(530, 140))  # chest, arms out of the way
+
+
+def test_landed_ignores_shoulder_hits():
+    assert not hits((482, 202), wrist_l=(470, 140), wrist_r=(530, 140))
+
+
+def test_landed_ignores_arm_and_block_hits():
+    # a glove on the forearm in front of the body is a block, not a landed shot
+    assert not hits((500, 215), wrist_l=(470, 140), wrist_r=(530, 140), elbow_l=(500, 260), elbow_r=(520, 260))
+
+
+def test_landed_ignores_contact_beside_the_torso():
+    assert not hits((590, 250), wrist_l=(470, 140), wrist_r=(530, 140))

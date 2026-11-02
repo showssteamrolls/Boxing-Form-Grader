@@ -225,14 +225,14 @@ def main():
     parser.add_argument("--det-conf", type=float, default=0.3)
     parser.add_argument("--redetect", action="store_true", help="Ignore the cached pose detections")
     parser.add_argument("--min-speed", type=float, default=None)
-    parser.add_argument("--hit-margin", type=float, default=None)
+    parser.add_argument("--arm-clear", type=float, default=None)
     parser.add_argument("--jab-max-arc", type=float, default=None)
     parser.add_argument("--min-reach", type=float, default=None)
     parser.add_argument("--color-weight", type=float, default=None)
     args = parser.parse_args()
 
     cfg = SparringConfig()
-    for name in ("min_speed", "hit_margin", "jab_max_arc", "min_reach", "color_weight"):
+    for name in ("min_speed", "arm_clear", "jab_max_arc", "min_reach", "color_weight"):
         value = getattr(args, name)
         if value is not None:
             setattr(cfg, name, value)
