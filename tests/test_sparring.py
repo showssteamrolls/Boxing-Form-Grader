@@ -12,6 +12,7 @@ from sparring import (  # noqa: E402
     SparringConfig,
     _landed,
     zone_series,
+    _is_burst,
     _resolve_mutual_landings,
     head_center,
     head_ellipse,
@@ -430,3 +431,20 @@ def test_landed_ignores_a_parry_on_the_glove_in_front_of_the_face():
     assert not hits((484, 176), wrist_l=(488, 180), wrist_r=(530, 140))
     # the same spot with the guard dropped is a hit
     assert hits((484, 176), wrist_l=(470, 260), wrist_r=(530, 260), elbow_l=(470, 280), elbow_r=(530, 280))
+
+
+def test_wave_filter_rejects_drift_and_keeps_a_burst():
+    cfg = SparringConfig()
+    fps = 30
+    rel = np.zeros((60, 2))
+    approach = np.zeros(60)
+    rel[:, 0] = np.linspace(0.5, 0.55, 60)       # a hand held out and drifting
+    approach[30] = 4.0
+    assert not _is_burst(approach, rel, 20, 35, 30, fps, cfg)
+    rel[35:, 0] = 1.1                              # a real punch travels out
+    approach[:] = 0.2
+    approach[30] = 6.0
+    assert _is_burst(approach, rel, 20, 35, 30, fps, cfg)
+    approach[:30] = 5.0                            # constant fast waving: no burst over its own baseline
+    approach[30] = 6.0
+    assert not _is_burst(approach, rel, 28, 35, 30, fps, cfg)
