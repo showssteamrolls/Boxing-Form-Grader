@@ -2,7 +2,7 @@
   "spars": [
     {
       "slug": "102326_ant_ryan_r2",
-      "title": "Round 2 spar",
+      "title": "Ant & Ryan R2",
       "youtube": null,
       "video": "spars/102326_ant_ryan_r2.mp4",
       "start": 0.0,
@@ -19,6 +19,28 @@
           "landed": 0,
           "jab": 29,
           "power": 40
+        }
+      }
+    },
+    {
+      "slug": "110126_ant_alex_r2",
+      "title": "Ant & Alex R2",
+      "youtube": null,
+      "video": "spars/110126_ant_alex_r2.mp4",
+      "start": 0.0,
+      "end": 134.267,
+      "counts": {
+        "A": {
+          "thrown": 59,
+          "landed": 8,
+          "jab": 18,
+          "power": 41
+        },
+        "B": {
+          "thrown": 87,
+          "landed": 1,
+          "jab": 32,
+          "power": 55
         }
       }
     }
