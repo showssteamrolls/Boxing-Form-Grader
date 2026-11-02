@@ -10,6 +10,9 @@ from sparring import (  # noqa: E402
     Detection,
     FighterTracker,
     SparringConfig,
+    _landed,
+    _resolve_mutual_landings,
+    head_center,
     resolve_identity,
     analyze,
     build_report,
@@ -122,22 +125,16 @@ def test_slow_arm_movement_is_ignored():
     assert punches == []
 
 
+def aimed_at_head(total, punches):
+    a = make_fighter(total, 300, 1, punches)
+    a[:, L_WR, 1] = 172  # jab travels at head height
+    return a
+
+
 def test_landed_depends_on_distance_to_opponent():
     total = 80
-    far = analyze(
-        to_pairs(
-            make_fighter(total, 300, 1, [(20, "left", "straight")]),
-            make_fighter(total, 700, -1),
-        ),
-        FPS,
-    )[0]
-    near = analyze(
-        to_pairs(
-            make_fighter(total, 300, 1, [(20, "left", "straight")]),
-            make_fighter(total, 420, -1),
-        ),
-        FPS,
-    )[0]
+    far = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 700, -1)), FPS)[0]
+    near = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 420, -1)), FPS)[0]
     assert len(far) == 1 and far[0]["landed"] is False
     assert len(near) == 1 and near[0]["landed"] is True
 
@@ -277,3 +274,75 @@ def test_resolve_identity_puts_darker_shirt_in_slot_zero():
     assert fixed[0][0].color[0] < 0.1
     assert fixed[0][1].color[0] > 0.1
     assert changes == 0
+
+
+def opponent(elbow_l=(485, 250), elbow_r=(515, 250), wrist_l=(480, 215), wrist_r=(520, 215)):
+    """Single-frame opponent facing left: nose (480,170), shoulders y=200, hips y=300, torso length 100."""
+    kp = np.zeros((1, 17, 2))
+    kp[0, 0] = (480, 170)
+    kp[0, L_SH] = (480, 200)
+    kp[0, R_SH] = (520, 200)
+    kp[0, L_HIP] = (480, 300)
+    kp[0, R_HIP] = (520, 300)
+    kp[0, 7], kp[0, 8] = elbow_l, elbow_r
+    kp[0, L_WR], kp[0, R_WR] = wrist_l, wrist_r
+    return type("Opp", (), {"kp": kp})()
+
+
+def hits(wrist, **kw):
+    return _landed(opponent(**kw), 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig())
+
+
+def test_landed_counts_head_and_torso():
+    assert hits((482, 172))  # on the face
+    assert hits((500, 255), wrist_l=(470, 140), wrist_r=(530, 140))  # chest, arms out of the way
+
+
+def test_landed_ignores_shoulder_hits():
+    assert not hits((482, 202), wrist_l=(470, 140), wrist_r=(530, 140))
+
+
+def test_landed_ignores_arm_and_block_hits():
+    # a glove on the forearm in front of the body is a block, not a landed shot
+    assert not hits((500, 215), wrist_l=(470, 140), wrist_r=(530, 140), elbow_l=(500, 260), elbow_r=(520, 260))
+
+
+def test_landed_ignores_contact_beside_the_torso():
+    assert not hits((590, 250), wrist_l=(470, 140), wrist_r=(530, 140))
+
+
+def test_head_target_holds_when_the_nose_drops_out():
+    opp = opponent()
+    kp = opp.kp[0].copy()
+    with_nose = head_center(kp, 100.0).copy()
+    kp[0] = np.nan
+    without_nose = head_center(kp, 100.0)
+    assert np.linalg.norm(with_nose - without_nose) < 30  # same place, within a third of a torso
+
+
+def test_landed_still_counts_when_a_glove_hides_the_nose():
+    opp = opponent(wrist_l=(470, 140), wrist_r=(530, 140))
+    opp.kp[0, 0] = np.nan
+    assert _landed(opp, 100.0, np.array([[500, 160.0]]), 0, 0, SparringConfig())
+
+
+def test_mutual_landings_keep_only_the_faster_punch():
+    punches = [
+        {"t": 10.0, "fighter": "A", "landed": True, "speed": 11.8},
+        {"t": 10.1, "fighter": "B", "landed": True, "speed": 6.0},
+        {"t": 20.0, "fighter": "B", "landed": True, "speed": 5.0},
+    ]
+    _resolve_mutual_landings(punches, 0.3)
+    assert [p["landed"] for p in punches] == [True, False, True]
+
+
+def test_fighters_at_different_depths_do_not_land():
+    total = 80
+    near = analyze(to_pairs(aimed_at_head(total, [(20, "left", "straight")]), make_fighter(total, 420, -1)), FPS)[0]
+    assert near[0]["landed"] is True
+    b = make_fighter(total, 420, -1)
+    b[:, :, 1] -= 80  # same image position but far deeper in the scene: boxes sit much higher
+    a = aimed_at_head(total, [(20, "left", "straight")])
+    a[:, L_WR, 1] = 92
+    deep = analyze(to_pairs(a, b), FPS)[0]
+    assert deep[0]["landed"] is False

@@ -32,7 +32,12 @@ class SparringConfig:
     jab_max_arc: float = 0.25
     span_back_s: float = 0.4
     span_forward_s: float = 0.25
-    hit_margin: float = 0.35
+    head_radius: float = 0.22      # head target, in opponent torso lengths around the nose
+    torso_scale: float = 1.10      # torso target: shoulder-hip quad scaled about its center
+    shoulder_clear: float = 0.20   # contacts this close to a shoulder count as shoulder hits
+    mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it
+    depth_tol: float = 0.6         # max feet-line gap, in torso lengths, for two fighters to count as in reach
+    arm_clear: float = 0.12        # contacts this close to an upper arm or forearm count as arm hits
     match_max_cost: float = 2.0
     color_weight: float = 0.0
     min_color_sep: float = 0.04
@@ -75,8 +80,11 @@ def torso_color(frame, kp, conf, min_conf=0.3):
     return patch.reshape(-1, 3).mean(axis=0) / 255.0
 
 
+APPEARANCE_DIMS = 7  # torso BGR, wrist-patch BGR, red-glove share
+
+
 def appearance(frame, kp, conf, box=None, min_conf=0.3):
-    feats = np.full(6, np.nan)
+    feats = np.full(APPEARANCE_DIMS, np.nan)
     torso = torso_color(frame, kp, conf, min_conf)
     if torso is not None:
         feats[:3] = torso
@@ -94,7 +102,20 @@ def appearance(frame, kp, conf, box=None, min_conf=0.3):
             continue
         patches.append(frame[y0:y1, x0:x1].reshape(-1, 3).mean(axis=0) / 255.0)
     if patches:
-        feats[3:] = np.mean(patches, axis=0)
+        feats[3:6] = np.mean(patches, axis=0)
+    reds = []
+    big = max(4, int(0.09 * box_h))
+    for j in (L_WRIST, R_WRIST):
+        if conf[j] < min_conf:
+            continue
+        x, y = int(kp[j][0]), int(kp[j][1])
+        patch = frame[max(0, y - big): y + big, max(0, x - big): x + big].astype(float)
+        if patch.shape[0] < 3 or patch.shape[1] < 3:
+            continue
+        b, g, r_ = patch[..., 0], patch[..., 1], patch[..., 2]
+        reds.append(float(np.mean((r_ > 90) & (r_ > 1.7 * g) & (r_ > 1.7 * b))))
+    if reds:
+        feats[6] = float(np.mean(reds))  # share of red glove pixels around the wrists
     return feats
 
 
@@ -247,12 +268,24 @@ class FighterTracker:
         return out
 
 
-def resolve_identity(pairs, min_margin=0.06, min_len=5, overlap_iou=0.02):
-    """Fix fighter swaps using top brightness. Slot 0 becomes the darker-topped fighter.
+def identity_score(det):
+    """Higher = more like the dark-topped, red-gloved fighter. None when nothing is measurable."""
+    if det is None or det.color is None:
+        return None
+    c = np.asarray(det.color, dtype=float)
+    red = c[6] if len(c) > 6 and not np.isnan(c[6]) else None
+    lum = torso_brightness(det)
+    if red is None and lum is None:
+        return None
+    return (red if red is not None else 0.0) + (2.0 * (0.25 - lum) if lum is not None else 0.0)
+
+
+def resolve_identity(pairs, min_margin=0.10, min_len=5, overlap_iou=0.02):
+    """Fix fighter swaps from appearance. Slot 0 becomes the fighter with the redder gloves and darker top.
 
     Frames are cut into stretches where both boxes are visible and apart, so the tracker could not
-    have swapped inside them. A stretch whose two tops clearly differ in brightness is forced into
-    the dark-first order; unclear stretches keep whatever order the tracker had.
+    have swapped inside them. A stretch whose two fighters clearly differ in appearance is forced into
+    the right order; unclear stretches keep whatever order the tracker had.
     """
     n = len(pairs)
     apart = np.zeros(n, bool)
@@ -271,13 +304,13 @@ def resolve_identity(pairs, min_margin=0.06, min_len=5, overlap_iou=0.02):
     for s, e in stretches:
         med = []
         for slot in (0, 1):
-            vals = [torso_brightness(pairs[k][slot]) for k in range(s, e)]
+            vals = [identity_score(pairs[k][slot]) for k in range(s, e)]
             vals = [v for v in vals if v is not None]
             med.append(float(np.median(vals)) if vals else None)
         if None in med or abs(med[0] - med[1]) < min_margin:
             flips.append(None)
         else:
-            flips.append(med[0] > med[1])
+            flips.append(med[1] > med[0])
     if all(f is None for f in flips):
         return pairs, 0
     current = next(f for f in flips if f is not None)
@@ -484,15 +517,96 @@ def _reach(me, side, lo, hi, torso):
     return float(np.nanmax(d)) if np.isfinite(d).any() else 0.0
 
 
-def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg):
-    margin = cfg.hit_margin * opp_torso
-    for k in range(lo, min(len(wrist_xy), hi + 1)):
-        pts = opp.kp[k][[NOSE] + TORSO_POINTS]
-        pts = pts[~np.isnan(pts).any(axis=1)]
-        w = wrist_xy[k]
-        if len(pts) < 2 or np.isnan(w).any():
+def head_center(kp, torso):
+    """Head position: the nose when it sits where a head should, otherwise up the torso axis.
+
+    A glove over the face makes the nose drop out or jump, so the axis estimate keeps the head
+    target in place. The target's size is fixed (a fraction of torso length), never read from keypoints.
+    """
+    sh = kp[[L_SHOULDER, R_SHOULDER]]
+    hp = kp[[L_HIP, R_HIP]]
+    axis = None
+    if not np.isnan(sh).any() and not np.isnan(hp).any():
+        up = sh.mean(axis=0) - hp.mean(axis=0)
+        norm = float(np.linalg.norm(up))
+        if norm > 1e-6:
+            axis = sh.mean(axis=0) + up / norm * 0.45 * torso
+    nose = kp[NOSE]
+    if not np.isnan(nose).any():
+        if axis is None or np.linalg.norm(nose - axis) <= 0.6 * torso:
+            return nose
+    return axis
+
+
+def _seg_dist(p, a, b):
+    ab = b - a
+    denom = float(ab @ ab)
+    t = 0.0 if denom < 1e-9 else float(np.clip((p - a) @ ab / denom, 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def _in_quad(p, quad):
+    sign = 0
+    for i in range(4):
+        a, b = quad[i], quad[(i + 1) % 4]
+        cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+        if abs(cross) < 1e-9:
             continue
-        if np.all(w >= pts.min(axis=0) - margin) and np.all(w <= pts.max(axis=0) + margin):
+        cur = 1 if cross > 0 else -1
+        if sign == 0:
+            sign = cur
+        elif cur != sign:
+            return False
+    return True
+
+
+def _same_depth(me, opp, lo, hi, torso, cfg):
+    """Fighters standing at very different distances from the camera can overlap in 2D without touching.
+
+    The bottom of each fighter's box tracks where their feet meet the floor, so a large gap means
+    one is much deeper in the scene. Unknown (no boxes) passes.
+    """
+    a = me.box[lo : hi + 1, 3]
+    b = opp.box[lo : hi + 1, 3]
+    gap = np.abs(a - b) / max(torso, 1e-6)
+    gap = gap[~np.isnan(gap)]
+    if len(gap) == 0:
+        return True
+    return float(np.median(gap)) <= cfg.depth_tol
+
+
+def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg):
+    """True if the wrist reaches the opponent's head or torso, and not an arm or shoulder.
+
+    Head: a circle around the nose. Torso: the shoulder-hip quad, scaled up a little. A contact in
+    the torso zone is dropped when it sits within shoulder_clear of a shoulder point or within
+    arm_clear of the opponent's upper arm or forearm (a block or an arm hit).
+    """
+    for k in range(lo, min(len(wrist_xy), hi + 1)):
+        w = wrist_xy[k]
+        if np.isnan(w).any():
+            continue
+        kp = opp.kp[k]
+        head = head_center(kp, opp_torso)
+        if head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso:
+            return True
+        quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
+        if np.isnan(quad).any():
+            continue
+        center = quad.mean(axis=0)
+        if not _in_quad(w, center + (quad - center) * cfg.torso_scale):
+            continue
+        if min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso:
+            continue
+        on_arm = False
+        for sh, el, wr in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
+            for a, b in ((sh, el), (el, wr)):
+                pa, pb = kp[a], kp[b]
+                if np.isnan(pa).any() or np.isnan(pb).any():
+                    continue
+                if _seg_dist(w, pa, pb) <= cfg.arm_clear * opp_torso:
+                    on_arm = True
+        if not on_arm:
             return True
     return False
 
@@ -531,6 +645,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                     continue
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
+                in_depth = _same_depth(me, opp, peak, hi, torsos[i], cfg)
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),
@@ -538,14 +653,28 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                         "hand": side,
                         "lead": bool(is_lead),
                         "type": "jab" if is_jab else "power",
-                        "landed": bool(_landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg)),
+                        "landed": bool(in_depth and _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg)),
                         "speed": round(float(approach[peak]), 1),
                         "reach": round(reach, 2),
                     }
                 )
         punches.extend(_dedupe(events, cfg.cross_hand_gap_s))
     punches.sort(key=lambda e: e["t"])
+    _resolve_mutual_landings(punches, cfg.mutual_gap_s)
     return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads}
+
+
+def _resolve_mutual_landings(punches, gap_s):
+    """When both fighters register a landed punch at once, the harder-moving one is the thrower.
+
+    The other glove is usually a guard or counter moving through the clinch, not a clean hit.
+    """
+    landed = [p for p in punches if p["landed"]]
+    for p in landed:
+        for q in landed:
+            if q["fighter"] != p["fighter"] and abs(q["t"] - p["t"]) <= gap_s and p["landed"] and q["landed"]:
+                weaker = p if p["speed"] < q["speed"] else q
+                weaker["landed"] = False
 
 
 def analyze(pairs, fps, cfg=None, start_s=0.0):
