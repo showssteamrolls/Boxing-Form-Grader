@@ -379,6 +379,21 @@
       const row = core.poseSmooth(pose, id, t);
       if (!row) continue;
       const pt = (j) => (row[j * 2] < 0 ? null : [(row[j * 2] / 1000) * w, (row[j * 2 + 1] / 1000) * h]);
+      // fist centre: the wrist point pushed along the forearm, the same point the landed check uses
+      const ext = pose.fist || 0;
+      const torsoPx = (() => {
+        const a = pt(1), b = pt(2), c = pt(7), d = pt(8);
+        if (!a || !b || !c || !d) return 0;
+        return Math.hypot((a[0] + b[0]) / 2 - (c[0] + d[0]) / 2, (a[1] + b[1]) / 2 - (c[1] + d[1]) / 2);
+      })();
+      const tip = (hand) => {
+        const e = pt(hand === "left" ? 3 : 4), wr = pt(hand === "left" ? 5 : 6);
+        if (!wr) return null;
+        if (!e || !torsoPx || !ext) return wr;
+        const dx = wr[0] - e[0], dy = wr[1] - e[1], n = Math.hypot(dx, dy);
+        if (n < 1e-6) return wr;
+        return [wr[0] + (dx / n) * ext * torsoPx, wr[1] + (dy / n) * ext * torsoPx];
+      };
       ctx.lineCap = "butt";
       ctx.lineJoin = "miter";
       ctx.shadowBlur = 0;
@@ -388,6 +403,10 @@
       for (const [a, b] of BONES) {
         const pa = pt(a), pb = pt(b);
         if (pa && pb) drawBone(pa, pb);
+      }
+      for (const hand of ["left", "right"]) {
+        const wr = pt(hand === "left" ? 5 : 6), tp = tip(hand);
+        if (wr && tp && tp !== wr) drawBone(wr, tp);
       }
       // face target: the same ellipse the landed check uses (forehead, eyes, chin across to the ears)
       const hx = row[18], hy = row[19], hrx = row[20], hry = row[21];
@@ -442,15 +461,17 @@
           const pa = pt(a), pb = pt(b);
           if (pa && pb) drawBone(pa, pb);
         }
+        const wr = pt(hand === "left" ? 5 : 6), tp = tip(hand);
+        if (wr && tp && tp !== wr) drawBone(wr, tp);
         ctx.shadowBlur = 0;
       }
       ctx.globalAlpha = 1;
       // joint markers: small hollow circles (shoulders, elbows, hips), filled for wrists
       for (const j of [1, 2, 3, 4, 7, 8, 5, 6]) {
-        const p = pt(j);
-        if (!p) continue;
         const wrist = j === 5 || j === 6;
         const hand = j === 5 ? "left" : "right";
+        const p = wrist ? tip(hand) : pt(j);
+        if (!p) continue;
         const v = wrist ? flash[id][hand] : 0;
         const sz = (wrist ? 4 : 3) * dpr;
         ctx.strokeStyle = v > 0 ? `rgb(${GREEN})` : COLORS[id];

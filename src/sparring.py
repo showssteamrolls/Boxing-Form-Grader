@@ -38,15 +38,16 @@ class SparringConfig:
     head_radius: float = 0.22      # head target, in opponent torso lengths around the nose
     mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it
     depth_tol: float = 0.6         # max feet-line gap, in torso lengths, for two fighters to count as in reach
-    glove_clear: float = 0.15      # contacts this close to the opponent's glove count as parries
-    arm_clear: float = 0.08        # contacts this close to an upper arm or forearm count as arm hits
+    glove_clear: float = 0.10      # contacts this close to the opponent's glove count as parries
+    arm_clear: float = 0.06        # contacts this close to an upper arm or forearm count as arm hits
     match_max_cost: float = 2.0
     color_weight: float = 0.0
     min_color_sep: float = 0.04
     learn_frames: int = 45
     min_reach: float = 0.65
     lum_weight: float = 0.0
-    glove_ext: float = 0.18        # the glove reaches this far past the wrist along the forearm, in torso lengths
+    contact_slack_s: float = 0.12  # keep checking this long past full extension; the pose lags the glove
+    glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
     zone_pad: float = 0.12         # glove radius added around each body zone, in torso lengths
 
 
@@ -756,13 +757,12 @@ def _on_guard(kp, w, torso, cfg):
         p = kp[wr]
         if not np.isnan(p).any() and np.linalg.norm(w - p) <= cfg.glove_clear * torso:
             return True
-    for sh, el, wr in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
-        for a, b in ((sh, el), (el, wr)):
-            pa, pb = kp[a], kp[b]
-            if np.isnan(pa).any() or np.isnan(pb).any():
-                continue
-            if _seg_dist(w, pa, pb) <= cfg.arm_clear * torso:
-                return True
+    for el, wr in ((L_ELBOW, L_WRIST), (R_ELBOW, R_WRIST)):
+        pa, pb = kp[el], kp[wr]
+        if np.isnan(pa).any() or np.isnan(pb).any():
+            continue
+        if _seg_dist(w, pa, pb) <= cfg.arm_clear * torso:
+            return True
     return False
 
 
@@ -838,7 +838,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
                 in_depth = _same_depth(me, opp, peak, hi, torsos[i], cfg)
-                target = _landed(opp, torsos[1 - i], tip_xy, peak, hi, cfg, heads[1 - i], zones[1 - i]) if in_depth else None
+                target = _landed(opp, torsos[1 - i], tip_xy, max(lo, peak - int(round(0.06 * fps))), hi + int(round(cfg.contact_slack_s * fps)), cfg, heads[1 - i], zones[1 - i]) if in_depth else None
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),

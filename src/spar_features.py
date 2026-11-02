@@ -4,6 +4,7 @@ import numpy as np
 
 from sparring import (
     FIGHTER_IDS,
+    SparringConfig,
     ZONE_NAMES,
     L_ELBOW,
     L_HIP,
@@ -192,6 +193,7 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
         "h": int(height),
         "joints": POSE_JOINTS,
         "zones": list(ZONE_NAMES),
+        "fist": SparringConfig().glove_ext,
     }
     for i, fid in enumerate(FIGHTER_IDS):
         rows = []
