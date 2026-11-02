@@ -394,7 +394,7 @@
         ctx.shadowBlur = 0;
       }
       ctx.globalAlpha = 1;
-      // joint markers: small hollow squares (shoulders, elbows, hips), filled for wrists
+      // joint markers: small hollow circles (shoulders, elbows, hips), filled for wrists
       for (const j of [1, 2, 3, 4, 7, 8, 5, 6]) {
         const p = pt(j);
         if (!p) continue;
@@ -405,8 +405,10 @@
         ctx.strokeStyle = v > 0 ? `rgb(${GREEN})` : COLORS[id];
         ctx.fillStyle = v > 0 ? `rgb(${GREEN})` : COLORS[id];
         ctx.lineWidth = 1 * dpr;
-        if (wrist) ctx.fillRect(p[0] - sz, p[1] - sz, sz * 2, sz * 2);
-        else ctx.strokeRect(p[0] - sz, p[1] - sz, sz * 2, sz * 2);
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], sz, 0, Math.PI * 2);
+        if (wrist) ctx.fill();
+        else ctx.stroke();
       }
     }
     // punch markers: thin expanding ring at the wrist; green when it landed

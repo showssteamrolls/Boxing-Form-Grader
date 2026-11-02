@@ -179,7 +179,7 @@ def track_frames(frames, fps, cfg):
     tracker = FighterTracker(fps, cfg)
     pairs = [tracker.update(dets) for dets in frames]
     pairs, flips = resolve_identity(pairs)
-    print(f"Shirt-brightness identity pass: {flips} order changes applied")
+    print(f"Top-brightness identity pass: {flips} order changes applied")
     return pairs
 
 

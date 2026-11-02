@@ -129,60 +129,14 @@
   .architecture-section {
     min-height: 6vh;
   }
-
-  /* ---------------- UPLOAD SECTION ---------------- */
-  .upload-section {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 60px 20px 100px;
-    background: #111114;
-  }
-  .upload-section h2 { font-family: 'Oswald', sans-serif; font-size: 1.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 6px; }
-  .upload-section p { color: rgba(255,255,255,0.5); font-size: 0.85rem; margin-bottom: 28px; }
-
-  .drop-zone {
-    position: relative;
-    width: 100%;
-    max-width: 480px;
-    aspect-ratio: 16 / 10;
-    border: 2px dashed rgba(255,255,255,0.25);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    overflow: hidden;
-    transition: border-color 0.15s;
-  }
-  .drop-zone:hover { border-color: rgba(255,255,255,0.5); }
-  .drop-zone.has-video { border-style: solid; cursor: default; }
-  .drop-zone input[type="file"] { display: none; }
-  .drop-prompt { text-align: center; color: rgba(255,255,255,0.45); font-size: 0.85rem; }
-  .drop-prompt .icon { font-size: 2rem; display: block; margin-bottom: 8px; }
-  .drop-zone video, .drop-zone canvas {
-    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
-  }
-  .drop-zone canvas { pointer-events: none; }
-
-  .upload-scores { display: flex; gap: 16px; margin-top: 20px; }
-  .upload-scores .side {
-    background: #1a1a1e; border: 1px solid #2a2a30; border-radius: 10px;
-    padding: 10px 18px; text-align: center; min-width: 90px;
-  }
-  .upload-scores .lbl { font-family: 'Oswald', sans-serif; font-size: 0.68rem; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.04em; }
-  .upload-scores .val { font-family: 'Space Grotesk', monospace; font-size: 1.5rem; font-weight: 700; margin-top: 2px; }
-  .upload-scores .val.good { color: #4fdc7a; }
-  .upload-scores .val.bad { color: #ff5c5c; }
 </style>
 </head>
 <body>
 
 <section class="pc" id="counter" hidden>
   <div class="pc-head">
-    <h2>Sparring Analytics</h2>
-    <p>Per-fighter punch counts and live metrics, synced to the video. <a href="metrics.html">How every number is calculated →</a></p>
+    <h2>Sparring Analytics Dashboard</h2>
+    <p><a href="metrics.html">How Every Number is Calculated</a></p>
   </div>
   <div class="pc-stage">
     <div class="pc-video" id="pcVideo">
@@ -244,7 +198,6 @@
   <div class="text-col">
     <h1>Boxing Form Grader</h1>
     <p>REAL-TIME PUNCH-FORM SCORING</p>
-    <a class="cta-btn" href="#upload">Upload your own clip →</a>
   </div>
 
   <div class="demo-tile">
@@ -261,22 +214,6 @@
 </div>
 
 <div class="architecture-section"></div>
-
-<div class="upload-section" id="upload">
-  <h2>Upload your own clip</h2>
-  <div class="drop-zone" id="uploadZone">
-    <input type="file" accept="video/*" />
-    <div class="drop-prompt">
-      CLICK OR DRAG A CLIP HERE
-    </div>
-    <video style="display:none"></video>
-    <canvas style="display:none"></canvas>
-  </div>
-  <div class="upload-scores">
-    <div class="side"><div class="lbl">Left</div><div class="val" id="uploadLeft">--</div></div>
-    <div class="side"><div class="lbl">Right</div><div class="val" id="uploadRight">--</div></div>
-  </div>
-</div>
 
 <script src="counter.js" defer></script>
 <script type="module">
@@ -599,43 +536,6 @@ startAutoClip(
   document.getElementById("miniRight"),
   "sample-clips/bivol.mp4"
 );
-
-// ---- Upload section ----
-const uploadZone = document.getElementById("uploadZone");
-const uploadInput = uploadZone.querySelector('input[type="file"]');
-const uploadPrompt = uploadZone.querySelector(".drop-prompt");
-const uploadVideo = uploadZone.querySelector("video");
-const uploadCanvas = uploadZone.querySelector("canvas");
-const uploadLeftEl = document.getElementById("uploadLeft");
-const uploadRightEl = document.getElementById("uploadRight");
-
-async function handleUpload(file) {
-  if (!file) return;
-  uploadPrompt.style.display = "none";
-  uploadVideo.style.display = "block";
-  uploadCanvas.style.display = "block";
-  uploadZone.classList.add("has-video");
-  uploadVideo.src = URL.createObjectURL(file);
-  uploadVideo.loop = true;
-  uploadVideo.muted = true;
-  uploadVideo.playsInline = true;
-  await uploadVideo.play();
-
-  const fsr = await getFilesetResolver();
-  const grader = new Grader(uploadVideo, uploadCanvas, (side, result) => {
-    updateReadout(side === "left" ? uploadLeftEl : uploadRightEl, result);
-  });
-  await grader.init(fsr);
-  grader.start();
-}
-
-uploadZone.addEventListener("click", () => uploadInput.click());
-uploadInput.addEventListener("change", (e) => handleUpload(e.target.files[0]));
-uploadZone.addEventListener("dragover", (e) => e.preventDefault());
-uploadZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  handleUpload(e.dataTransfer.files[0]);
-});
 </script>
 </body>
 </html>

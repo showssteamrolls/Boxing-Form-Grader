@@ -248,10 +248,10 @@ class FighterTracker:
 
 
 def resolve_identity(pairs, min_margin=0.06, min_len=5, overlap_iou=0.02):
-    """Fix fighter swaps using shirt brightness. Slot 0 becomes the darker-shirted fighter.
+    """Fix fighter swaps using top brightness. Slot 0 becomes the darker-topped fighter.
 
     Frames are cut into stretches where both boxes are visible and apart, so the tracker could not
-    have swapped inside them. A stretch whose two shirts clearly differ in brightness is forced into
+    have swapped inside them. A stretch whose two tops clearly differ in brightness is forced into
     the dark-first order; unclear stretches keep whatever order the tracker had.
     """
     n = len(pairs)
