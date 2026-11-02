@@ -383,19 +383,20 @@
         const pa = pt(a), pb = pt(b);
         if (pa && pb) drawBone(pa, pb);
       }
-      // head: thin ring plus crosshair ticks
-      const nose = pt(0), ls = pt(1), rs = pt(2);
-      if (nose && ls && rs) {
-        const r = Math.max(5 * dpr, Math.hypot(ls[0] - rs[0], ls[1] - rs[1]) * 0.35);
+      // head: the same fixed-size circle the landed check uses, so a glove over the face can't shrink it
+      const hx = row[18], hy = row[19];
+      if (hx >= 0 && pose.headr && pose.headr[id]) {
+        const cx = (hx / 1000) * w, cy = (hy / 1000) * h;
+        const r = (pose.headr[id] / 1000) * w;
         ctx.lineWidth = 1 * dpr;
         ctx.beginPath();
-        ctx.arc(nose[0], nose[1], r, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(nose[0] - r * 1.5, nose[1]); ctx.lineTo(nose[0] - r * 0.6, nose[1]);
-        ctx.moveTo(nose[0] + r * 0.6, nose[1]); ctx.lineTo(nose[0] + r * 1.5, nose[1]);
-        ctx.moveTo(nose[0], nose[1] - r * 1.5); ctx.lineTo(nose[0], nose[1] - r * 0.6);
-        ctx.moveTo(nose[0], nose[1] + r * 0.6); ctx.lineTo(nose[0], nose[1] + r * 1.5);
+        ctx.moveTo(cx - r * 1.5, cy); ctx.lineTo(cx - r * 0.6, cy);
+        ctx.moveTo(cx + r * 0.6, cy); ctx.lineTo(cx + r * 1.5, cy);
+        ctx.moveTo(cx, cy - r * 1.5); ctx.lineTo(cx, cy - r * 0.6);
+        ctx.moveTo(cx, cy + r * 0.6); ctx.lineTo(cx, cy + r * 1.5);
         ctx.stroke();
       }
       // landed-punch flash: the arm that connected glows green and fades

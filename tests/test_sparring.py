@@ -11,6 +11,8 @@ from sparring import (  # noqa: E402
     FighterTracker,
     SparringConfig,
     _landed,
+    _resolve_mutual_landings,
+    head_center,
     resolve_identity,
     analyze,
     build_report,
@@ -313,3 +315,41 @@ def test_landed_ignores_arm_and_block_hits():
 
 def test_landed_ignores_contact_beside_the_torso():
     assert not hits((590, 250), wrist_l=(470, 140), wrist_r=(530, 140))
+
+
+def test_head_target_holds_when_the_nose_drops_out():
+    opp = opponent()
+    kp = opp.kp[0].copy()
+    with_nose = head_center(kp, 100.0).copy()
+    kp[0] = np.nan
+    without_nose = head_center(kp, 100.0)
+    assert np.linalg.norm(with_nose - without_nose) < 30  # same place, within a third of a torso
+
+
+def test_landed_still_counts_when_a_glove_hides_the_nose():
+    opp = opponent(wrist_l=(470, 140), wrist_r=(530, 140))
+    opp.kp[0, 0] = np.nan
+    assert _landed(opp, 100.0, np.array([[500, 160.0]]), 0, 0, SparringConfig())
+
+
+def test_mutual_landings_keep_only_the_faster_punch():
+    punches = [
+        {"t": 10.0, "fighter": "A", "landed": True, "speed": 11.8},
+        {"t": 10.1, "fighter": "B", "landed": True, "speed": 6.0},
+        {"t": 20.0, "fighter": "B", "landed": True, "speed": 5.0},
+    ]
+    _resolve_mutual_landings(punches, 0.3)
+    assert [p["landed"] for p in punches] == [True, False, True]
+
+
+def test_fighters_at_different_depths_do_not_land():
+    total = 80
+    near = analyze(
+        to_pairs(make_fighter(total, 300, 1, [(20, "left", "straight")]), make_fighter(total, 420, -1)),
+        FPS,
+    )[0]
+    assert near[0]["landed"] is True
+    b = make_fighter(total, 420, -1)
+    b[:, :, 1] -= 80  # same image position but far deeper in the scene: boxes sit much higher
+    deep = analyze(to_pairs(make_fighter(total, 300, 1, [(20, "left", "straight")]), b), FPS)[0]
+    assert deep[0]["landed"] is False

@@ -23,6 +23,7 @@ from sparring import (  # noqa: E402
     summarize,
     appearance,
     resolve_identity,
+    APPEARANCE_DIMS,
 )
 
 YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
@@ -98,8 +99,8 @@ def save_detections(path, frames, fps, size, meta):
         conf=np.stack([d.conf for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 17), np.float32),
         box=np.stack([d.box for _, d in rows]).astype(np.float32) if rows else np.zeros((0, 4), np.float32),
         color=np.stack(
-            [np.full(6, np.nan) if d.color is None else d.color for _, d in rows]
-        ).astype(np.float32) if rows else np.zeros((0, 6), np.float32),
+            [np.full(APPEARANCE_DIMS, np.nan) if d.color is None else d.color for _, d in rows]
+        ).astype(np.float32) if rows else np.zeros((0, APPEARANCE_DIMS), np.float32),
     )
 
 
@@ -162,7 +163,7 @@ def needs_appearance_refresh(frames):
     for dets in frames:
         for d in dets:
             if d.color is not None:
-                return len(d.color) != 6
+                return len(d.color) != APPEARANCE_DIMS
     return False
 
 
@@ -186,7 +187,7 @@ def track_frames(frames, fps, cfg):
     tracker = FighterTracker(fps, cfg)
     pairs = [tracker.update(dets) for dets in frames]
     pairs, flips = resolve_identity(pairs)
-    print(f"Top-brightness identity pass: {flips} order changes applied")
+    print(f"Identity pass (glove color and top brightness): {flips} order changes applied")
     return pairs
 
 

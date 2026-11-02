@@ -65,7 +65,7 @@
 
   <h2>The pipeline</h2>
   <p>A pose model (YOLO11-pose) marks 17 body points on every person in every frame. The two largest people on the floor become <span class="a-dot"></span>fighter A and <span class="b-dot"></span>fighter B. Reflections in the mirror and people far in the background are smaller and get ignored.</p>
-  <p>Between frames, each fighter is matched to the same body by position. When the two stand apart, each stretch of frames is also checked by the brightness of each fighter's top, so the darker top is always fighter A. This only works when the tops differ clearly, and it can still slip during clinches. If the tops look alike, A is whoever starts on the left.</p>
+  <p>Between frames, each fighter is matched to the same body by position. When the two stand apart, each stretch of frames is also checked by glove color and top brightness, so the fighter with the redder gloves and darker top is always A. This only works when the two fighters look clearly different, and it can still slip when one fighter blocks the other from the camera. If they look alike, A is whoever starts on the left.</p>
   <p>Distances are measured in <strong>torso lengths</strong> (shoulder midpoint to hip midpoint), not pixels. That keeps a fighter who is closer to the camera from looking faster just because they look bigger. Speeds are torso lengths per second (<code>torso/s</code>).</p>
   <p>Counts are exact lookups on the punch list. The rolling metrics are computed ahead of time, four samples per second, and the page reads the right sample as the video plays.</p>
 
@@ -91,7 +91,7 @@
       <dt>What it is</dt>
       <dd>Thrown punches where the glove reached the opponent.</dd>
       <dt>How it's computed</dt>
-      <dd>From the moment of peak speed until the arm is fully out, check whether the wrist reaches the opponent's head or torso. The head is a circle around the nose, 0.3 of their torso length in radius. The torso is the shoulder-to-hip area, scaled up 10%. Contact is thrown out if it lands within 0.2 torso lengths of a shoulder, or within 0.12 of either of their upper arms or forearms.</dd>
+      <dd>From the moment of peak speed until the arm is fully out, check whether the wrist reaches the opponent's head or torso. The head is a fixed circle, 0.3 of their torso length in radius, centered on the nose. If the nose drops out (a glove over the face), the circle sits up the torso line instead, so it never shrinks or moves away. The torso is the shoulder-to-hip area, scaled up 10%. Contact is thrown out if it lands within 0.2 torso lengths of a shoulder, or within 0.12 of either of their upper arms or forearms. It also doesn't count if the fighters' feet are far apart in the image (more than 0.6 torso lengths), which means one is much deeper in the scene and only overlaps in 2D. If both fighters register a landed punch within 0.3 s of each other, only the faster one keeps it.</dd>
       <dt>Read it as</dt>
       <dd>"Reached the head or torso, not an arm or shoulder." Punches that hit a guarding arm are not counted, which also removes most blocks. A glove covering the face can still pass for a hit, because from one camera a block and a hit can look the same. Treat the number as an upper bound on clean hits. It is best for comparing the two fighters under the same conditions, less so for quoting as a CompuBox-style stat.</dd>
     </dl>
