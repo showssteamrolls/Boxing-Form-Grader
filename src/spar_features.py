@@ -15,7 +15,7 @@ from sparring import (
 )
 
 SERIES_DT = 0.25
-POSE_HZ = 15
+POSE_HZ = 30
 POSE_JOINTS = [0, 5, 6, 7, 8, 9, 10, 11, 12]
 
 WINDOWS = {

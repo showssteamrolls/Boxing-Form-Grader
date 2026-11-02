@@ -61,7 +61,7 @@ def download(url, dest_dir):
     return files[0], vid
 
 
-def prepare_video(src, dst, height=720, fps=30):
+def _encode(src, dst, height, fps, crf, preset="veryfast"):
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
         return dst
@@ -69,12 +69,19 @@ def prepare_video(src, dst, height=720, fps=30):
         [
             "ffmpeg", "-v", "error", "-y", "-i", str(src),
             "-vf", f"scale=-2:{height},fps={fps}",
-            "-c:v", "libx264", "-crf", "27", "-preset", "veryfast",
+            "-c:v", "libx264", "-crf", str(crf), "-preset", preset,
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(dst),
         ],
         check=True,
     )
     return dst
+
+
+def prepare_video(src, slug, out_dir):
+    """Two copies: a 720p/30fps one for analysis (kept out of git) and a 1080p/60fps one for the page."""
+    analysis = _encode(src, ROOT / "data" / "analysis" / f"{slug}.mp4", 720, 30, 27)
+    display = _encode(src, out_dir / f"{slug}.mp4", 1080, 60, 28)
+    return analysis, display
 
 
 def save_detections(path, frames, fps, size, meta):
@@ -203,7 +210,7 @@ def main():
     parser = argparse.ArgumentParser(description="Count punches and engineer live metrics for both fighters in a spar")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--url", help="YouTube URL (unlisted works)")
-    source.add_argument("--video", help="Local video file (re-encoded to a 720p/30fps web copy first)")
+    source.add_argument("--video", help="Local video file (re-encoded to a 720p/30fps analysis copy and a 1080p/60fps web copy)")
     parser.add_argument("--title", default=None)
     parser.add_argument("--label-a", default="Fighter A", help="Fighter on the left at the start")
     parser.add_argument("--label-b", default="Fighter B", help="Fighter on the right at the start")
@@ -238,8 +245,8 @@ def main():
     else:
         src = Path(args.video)
         slug_hint = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or src.stem).strip("-")
-        video_path = prepare_video(src, out_dir / f"{slug_hint}.mp4")
-        page_video = f"spars/{video_path.name}"
+        video_path, display_path = prepare_video(src, slug_hint, out_dir)
+        page_video = f"spars/{display_path.name}"
 
     slug = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or yt or video_path.stem).strip("-")
     meta = {

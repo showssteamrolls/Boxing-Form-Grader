@@ -136,7 +136,7 @@ def test_pose_export_scales_and_marks_missing():
     b = make_fighter(total, 700, -1)
     analysis = analyze_full(to_pairs(a, b, drop_a=set(range(0, 60))), FPS, SparringConfig(), 5.0)
     pose = build_pose(analysis, FPS, 5.0, 1000, 500)
-    assert pose["t0"] == 5.0 and pose["hz"] == 15
+    assert pose["t0"] == 5.0 and pose["hz"] == 30
     assert len(pose["A"]) == len(pose["B"])
     assert all(row is None for row in pose["A"])
     row = pose["B"][0]

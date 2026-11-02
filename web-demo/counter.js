@@ -109,6 +109,25 @@
       if (k < 0 || k >= pose[id].length) return null;
       return pose[id][k];
     },
+
+    // Linear blend between the two nearest pose frames so the skeleton moves smoothly at 60 fps.
+    poseSmooth(pose, id, t) {
+      const f = (t - pose.t0) * pose.hz;
+      const k = Math.floor(f);
+      const rows = pose[id];
+      if (k < 0 || k >= rows.length) return null;
+      const a = rows[k], b = rows[k + 1];
+      if (!a) return null;
+      if (!b) return a;
+      const w = f - k;
+      const out = new Array(a.length);
+      for (let i = 0; i < a.length; i += 2) {
+        const bad = a[i] < 0 || b[i] < 0;
+        out[i] = bad ? a[i] : a[i] + (b[i] - a[i]) * w;
+        out[i + 1] = bad ? a[i + 1] : a[i + 1] + (b[i + 1] - a[i + 1]) * w;
+      }
+      return out;
+    },
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = core;
@@ -351,7 +370,7 @@
       ctx.stroke();
     };
     for (const id of FIGHTERS) {
-      const row = core.poseAt(pose, id, t);
+      const row = core.poseSmooth(pose, id, t);
       if (!row) continue;
       const pt = (j) => (row[j * 2] < 0 ? null : [(row[j * 2] / 1000) * w, (row[j * 2 + 1] / 1000) * h]);
       ctx.lineCap = "butt";
