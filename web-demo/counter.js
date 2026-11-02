@@ -483,7 +483,6 @@
       field(cards[f.id], "label").textContent = f.label;
       field(cards[f.id], "stance").textContent = f.stance;
     }
-    $("pcTitle").textContent = state.spar.title || "";
   }
 
   function loadYouTubeApi() {
