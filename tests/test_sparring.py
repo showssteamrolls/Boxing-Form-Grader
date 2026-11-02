@@ -11,6 +11,7 @@ from sparring import (  # noqa: E402
     FighterTracker,
     SparringConfig,
     _landed,
+    zone_series,
     _resolve_mutual_landings,
     head_center,
     head_ellipse,
@@ -292,12 +293,54 @@ def opponent(elbow_l=(485, 250), elbow_r=(515, 250), wrist_l=(480, 215), wrist_r
 
 
 def hits(wrist, **kw):
-    return _landed(opponent(**kw), 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig())
+    opp = opponent(**kw)
+    zones = zone_series(opp, 100.0, opp)
+    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig(), zones=zones)
 
 
-def test_landed_counts_head_and_torso():
+def broad_opponent(front=True):
+    """Opponent with shoulders and hips 80 px wide, chest to the camera (front) or back to it."""
+    opp = opponent(wrist_l=(440, 140), wrist_r=(560, 140), elbow_l=(430, 250), elbow_r=(570, 250))
+    left, right = (540, 460) if front else (460, 540)
+    opp.kp[0, L_SH], opp.kp[0, R_SH] = (left, 200), (right, 200)
+    opp.kp[0, L_HIP], opp.kp[0, R_HIP] = (left, 300), (right, 300)
+    opp.kp[0, 0] = (500, 170)
+    if front:
+        opp.kp[0, 1:3] = [(492, 165), (508, 165)]
+    else:
+        opp.kp[0, 0:3] = np.nan
+        opp.kp[0, 3:5] = [(475, 170), (525, 170)]
+    return opp
+
+
+def broad_hit(opp, wrist):
+    zones = zone_series(opp, 100.0, opp)
+    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig(), zones=zones)
+
+
+def test_landed_counts_head_and_body_zones():
     assert hits((482, 172))  # on the face
-    assert hits((500, 255), wrist_l=(470, 140), wrist_r=(530, 140))  # chest, arms out of the way
+    front = broad_opponent()
+    assert broad_hit(front, (500, 232)) == "solar_plexus"
+    assert broad_hit(front, (500, 272)) == "core"
+
+
+def test_landed_ignores_chest_and_back():
+    assert broad_hit(broad_opponent(), (500, 205)) is None  # chest line, not a target
+    back = broad_opponent(front=False)
+    assert broad_hit(back, (500, 232)) is None
+    assert broad_hit(back, (500, 272)) is None
+
+
+def test_zones_follow_a_body_turned_to_the_side():
+    front = broad_opponent()
+    turned = broad_opponent()
+    turned.kp[0, L_SH], turned.kp[0, R_SH] = (505, 200), (495, 200)  # shoulders nearly stacked
+    turned.kp[0, L_HIP], turned.kp[0, R_HIP] = (505, 300), (495, 300)
+    zf = zone_series(front, 100.0, front)[0]
+    zt = zone_series(turned, 100.0, turned)[0]
+    assert zt[1][2] <= zf[1][2]  # liver is no wider when seen from the side
+    assert np.all(np.isfinite(zt))  # still drawn, not dropped
 
 
 def test_landed_ignores_shoulder_hits():

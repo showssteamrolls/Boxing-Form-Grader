@@ -356,12 +356,18 @@
     const ARMS = { left: [[1, 3], [3, 5]], right: [[2, 4], [4, 6]] };
     // fade-out strength of a landed-punch flash per fighter/hand, 1 at contact
     const flash = { A: { left: 0, right: 0 }, B: { left: 0, right: 0 } };
+    // the target that took a landed punch, keyed by the fighter who was hit
+    const struck = { A: {}, B: {} };
     for (const p of state.spar.punches) {
       if (!p.landed) continue;
       const age = t - p.t;
       if (age < -0.12 || age > 0.5) continue;
       const v = age < 0 ? 1 : 1 - age / 0.5;
       flash[p.fighter][p.hand] = Math.max(flash[p.fighter][p.hand], v);
+      if (p.target) {
+        const victim = p.fighter === "A" ? "B" : "A";
+        struck[victim][p.target] = Math.max(struck[victim][p.target] || 0, v);
+      }
     }
     const drawBone = (pa, pb) => {
       ctx.beginPath();
@@ -398,6 +404,31 @@
         ctx.moveTo(cx, cy - ry * 1.4); ctx.lineTo(cx, cy - ry * 0.6);
         ctx.moveTo(cx, cy + ry * 0.6); ctx.lineTo(cx, cy + ry * 1.4);
         ctx.stroke();
+      }
+      // body targets (solar plexus, liver, spleen, core): follow the torso as it turns; dashed when that
+      // side faces away from the opponent and the camera, so a punch there would not count
+      const zoneNames = pose.zones || [];
+      for (let zi = 0; zi < zoneNames.length; zi++) {
+        const o = 22 + zi * 6;
+        if (row[o] < 0) continue;
+        const zx = (row[o] / 1000) * w, zy = (row[o + 1] / 1000) * h;
+        const zrx = (row[o + 2] / 1000) * w, zry = (row[o + 3] / 1000) * w;
+        const tilt = ((row[o + 4] / 10) - 90) * Math.PI / 180;
+        const live = row[o + 5] >= 500;
+        const hit = struck[id][zoneNames[zi]] || 0;
+        ctx.beginPath();
+        ctx.ellipse(zx, zy, Math.max(zrx, 2), Math.max(zry, 2), tilt, 0, Math.PI * 2);
+        if (hit > 0) {
+          ctx.fillStyle = `rgba(${GREEN},${0.5 * hit})`;
+          ctx.fill();
+        }
+        ctx.setLineDash(live ? [] : [3 * dpr, 3 * dpr]);
+        ctx.strokeStyle = hit > 0 ? `rgb(${GREEN})` : COLORS[id];
+        ctx.globalAlpha = live ? 0.85 : 0.3;
+        ctx.lineWidth = 1 * dpr;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.9;
       }
       // landed-punch flash: the arm that connected glows green and fades
       for (const hand of ["left", "right"]) {

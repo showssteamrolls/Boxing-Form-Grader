@@ -35,8 +35,6 @@ class SparringConfig:
     span_back_s: float = 0.4
     span_forward_s: float = 0.25
     head_radius: float = 0.22      # head target, in opponent torso lengths around the nose
-    torso_scale: float = 1.10      # torso target: shoulder-hip quad scaled about its center
-    shoulder_clear: float = 0.20   # contacts this close to a shoulder count as shoulder hits
     mutual_gap_s: float = 0.30      # both fighters landing inside this window: only the faster punch keeps it
     depth_tol: float = 0.6         # max feet-line gap, in torso lengths, for two fighters to count as in reach
     glove_clear: float = 0.20      # contacts this close to the opponent's glove count as parries
@@ -47,6 +45,7 @@ class SparringConfig:
     learn_frames: int = 45
     min_reach: float = 0.65
     lum_weight: float = 0.0
+    zone_pad: float = 0.05         # glove radius added around each body zone, in torso lengths
 
 
 @dataclass
@@ -614,6 +613,104 @@ def head_series(track, torso):
     return out
 
 
+# Body targets, in the torso's own coordinates: psi is the angle around the body (0 = front center,
+# + = the fighter's right), b runs from the hip line (0) to the shoulder line (1), wz is half-width as a
+# share of body half-width, hb is half-height in torso lengths. Chest is left out on purpose.
+ZONES = (
+    ("solar_plexus", 0.0, 0.68, 0.22, 0.09),
+    ("liver", 0.50, 0.52, 0.24, 0.11),
+    ("spleen", -0.58, 0.55, 0.22, 0.11),
+    ("core", 0.0, 0.28, 0.34, 0.14),
+)
+ZONE_NAMES = tuple(z[0] for z in ZONES)
+ZONE_COLS = 6   # cx, cy, rx, ry, tilt (radians), hittable (0 or 1)
+
+
+def _side_view(kp, torso, refs):
+    """Signed cos and sin of the body's turn away from facing the camera, one value per frame.
+
+    cos comes from how far apart the shoulders sit (left minus right, so a back turned to the camera
+    goes negative), against the widest spread seen for that fighter. The sign of sin comes from which
+    way the nose points off the shoulder line. Face points that are visible mean the chest faces the
+    camera, even if the pose model swapped left and right.
+    """
+    n = len(kp)
+    sh_ref, _ = refs
+    spread = (kp[:, L_SHOULDER, 0] - kp[:, R_SHOULDER, 0]) / max(sh_ref * torso, 1e-6)
+    face_seen = ~np.isnan(kp[:, NOSE, 0]) & (~np.isnan(kp[:, L_EYE, 0]) | ~np.isnan(kp[:, R_EYE, 0]))
+    back_seen = np.isnan(kp[:, NOSE, 0]) & ~np.isnan(kp[:, L_EAR, 0]) & ~np.isnan(kp[:, R_EAR, 0])
+    cos = np.clip(spread, -1.0, 1.0)
+    cos = np.where(face_seen & (cos < 0), np.abs(cos), cos)
+    cos = np.where(back_seen & (cos > 0), -np.abs(cos), cos)
+    cos = _nan_smooth(cos[:, None], 5)[:, 0]
+    mid = _mid_shoulder(kp)
+    offset = (kp[:, NOSE, 0] - mid[:, 0]) / max(torso, 1e-6)
+    sign = np.where(np.abs(offset) > 0.06, np.sign(offset), np.nan)
+    return cos, sign
+
+
+def zone_series(track, torso, opp_track):
+    """Per-frame body targets, shape (n, len(ZONES), 6). NaN where the torso is unknown.
+
+    Each zone is a point on the surface of an elliptical torso (width from the shoulder and hip
+    spread, depth 0.6 of the width), turned by the body's estimated yaw, so it follows the body when
+    it rotates and slides toward the near edge in profile. 'Hittable' means that surface point faces
+    the opponent or the camera; a back turned to both is not a target.
+    """
+    kp = track.kp
+    n = len(kp)
+    out = np.full((n, len(ZONES), ZONE_COLS), np.nan)
+    if n == 0:
+        return out
+    sh_w = np.abs(kp[:, L_SHOULDER, 0] - kp[:, R_SHOULDER, 0]) / max(torso, 1e-6)
+    hp_w = np.abs(kp[:, L_HIP, 0] - kp[:, R_HIP, 0]) / max(torso, 1e-6)
+    sh_ref = float(np.clip(np.nanpercentile(sh_w, 90), 0.45, 1.2)) if np.isfinite(sh_w).sum() > 10 else 0.8
+    hp_ref = float(np.clip(np.nanpercentile(hp_w, 90), 0.3, 1.0)) if np.isfinite(hp_w).sum() > 10 else 0.6
+    cos, sign = _side_view(kp, torso, (sh_ref, hp_ref))
+    opp_mid = _mid_shoulder(opp_track.kp)
+    my_mid = _mid_shoulder(kp)
+    toward = np.sign(opp_mid[:, 0] - my_mid[:, 0])
+    toward = _nan_smooth(toward[:, None], 15)[:, 0]
+    toward = np.where(np.abs(toward) < 0.1, 1.0, np.sign(toward))
+    sign = np.where(np.isnan(sign), toward, sign)
+    sin = _nan_smooth((sign * np.sqrt(np.clip(1 - cos**2, 0, 1)))[:, None], 7)[:, 0]
+    phi = np.arctan2(sin, cos)
+    shoulders = _mid_shoulder(kp)
+    hips = (kp[:, L_HIP] + kp[:, R_HIP]) / 2.0
+    up = shoulders - hips
+    tilt = np.arctan2(up[:, 0], -up[:, 1])
+    for k in range(n):
+        if np.isnan(up[k]).any() or np.isnan(phi[k]):
+            continue
+        length = float(np.linalg.norm(up[k]))
+        for zi, (_, psi, b, wz, hb) in enumerate(ZONES):
+            half = (hp_ref + (sh_ref - hp_ref) * b) * torso / 2.0
+            depth = 0.7 * half
+            cx = hips[k, 0] + b * up[k, 0] + half * np.sin(psi) * -np.cos(phi[k]) + depth * np.cos(psi) * np.sin(phi[k])
+            cy = hips[k, 1] + b * up[k, 1]
+            rx = max(0.09 * torso, wz * (half * abs(np.cos(phi[k])) + depth * abs(np.sin(phi[k]))))
+            ry = hb * length
+            chi = phi[k] - psi
+            hittable = (toward[k] * np.sin(chi) > 0.2) or (np.cos(chi) > 0.6)
+            out[k, zi] = (cx, cy, rx, ry, tilt[k], 1.0 if hittable else 0.0)
+    for zi in range(len(ZONES)):
+        for c in range(5):
+            out[:, zi, c] = _nan_smooth(out[:, zi, c][:, None], 5)[:, 0]
+            out[:, zi, c] = _interp_short_gaps(out[:, zi, c], 15)
+        out[:, zi, 5] = _interp_short_gaps(out[:, zi, 5], 15)
+    return out
+
+
+def _in_zone(w, zone, pad):
+    cx, cy, rx, ry, tilt, _ = zone
+    dx, dy = w[0] - cx, w[1] - cy
+    c, s = np.cos(tilt), np.sin(tilt)
+    u = dx * c + dy * s        # along the zone's width axis
+    v = -dx * s + dy * c       # along its height axis
+    return (u / (rx + pad)) ** 2 + (v / (ry + pad)) ** 2 <= 1.0
+
+
+
 def _seg_dist(p, a, b):
     ab = b - a
     denom = float(ab @ ab)
@@ -667,35 +764,34 @@ def _on_guard(kp, w, torso, cfg):
     return False
 
 
-def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None):
-    """True if the wrist reaches the opponent's face or torso, and not a glove, arm or shoulder.
+def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, zones=None):
+    """Name of the target the wrist reaches (face or a body zone), else None. Falsy when nothing is hit.
 
-    Face: the ellipse from forehead and eyes down to the chin, across to the ears. Torso: the
-    shoulder-hip quad, scaled up a little. A contact is dropped when it sits on the opponent's glove
-    or arm, or (in the torso) within shoulder_clear of a shoulder. That covers parries, blocks and arm hits.
+    Face: the ellipse from forehead and eyes down to the chin, across to the ears. Body: the
+    solar plexus, liver, spleen and core zones that face the attacker (or the camera). A contact is
+    dropped when it sits on the opponent's glove or arm, so parries and arm hits do not count.
     """
     for k in range(lo, min(len(wrist_xy), hi + 1)):
         w = wrist_xy[k]
         if np.isnan(w).any():
             continue
         kp = opp.kp[k]
-        in_head = False
+        if _on_guard(kp, w, opp_torso, cfg):
+            continue
         if heads is not None and k < len(heads) and np.isfinite(heads[k]).all():
             cx, cy, rx, ry = heads[k]
-            in_head = ((w[0] - cx) / rx) ** 2 + ((w[1] - cy) / ry) ** 2 <= 1.0
+            if ((w[0] - cx) / rx) ** 2 + ((w[1] - cy) / ry) ** 2 <= 1.0:
+                return "head"
         else:
             head = head_center(kp, opp_torso)
-            in_head = head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso
-        in_torso = False
-        quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
-        if not np.isnan(quad).any():
-            center = quad.mean(axis=0)
-            in_torso = _in_quad(w, center + (quad - center) * cfg.torso_scale)
-            if in_torso and min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso:
-                in_torso = False
-        if (in_head or in_torso) and not _on_guard(kp, w, opp_torso, cfg):
-            return True
-    return False
+            if head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso:
+                return "head"
+        if zones is not None and k < len(zones):
+            for zi, name in enumerate(ZONE_NAMES):
+                z = zones[k, zi]
+                if np.isfinite(z).all() and z[5] > 0.5 and _in_zone(w, z, cfg.zone_pad * opp_torso):
+                    return name
+    return None
 
 
 def _dedupe(events, gap_s):
@@ -712,11 +808,12 @@ def _dedupe(events, gap_s):
 def analyze_full(pairs, fps, cfg=None, start_s=0.0):
     cfg = cfg or SparringConfig()
     if len(pairs) < 3:
-        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None, "heads": None}
+        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None, "heads": None, "zones": None}
     tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
     torsos = [torso_length(t) for t in tracks]
     leads = [lead_series(tracks[i], tracks[1 - i], torsos[i], fps) for i in (0, 1)]
     heads = [head_series(tracks[i], torsos[i]) for i in (0, 1)]
+    zones = [zone_series(tracks[i], torsos[i], tracks[1 - i]) for i in (0, 1)]
     stances = ["orthodox" if float(leads[i].mean()) >= 0.5 else "southpaw" for i in (0, 1)]
     punches = []
     for i in (0, 1):
@@ -734,6 +831,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
                 in_depth = _same_depth(me, opp, peak, hi, torsos[i], cfg)
+                target = _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg, heads[1 - i], zones[1 - i]) if in_depth else None
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),
@@ -741,7 +839,8 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                         "hand": side,
                         "lead": bool(is_lead),
                         "type": "jab" if is_jab else "power",
-                        "landed": bool(in_depth and _landed(opp, torsos[1 - i], wrist_xy, peak, hi, cfg, heads[1 - i])),
+                        "landed": target is not None,
+                        "target": target,
                         "speed": round(float(approach[peak]), 1),
                         "reach": round(reach, 2),
                     }
@@ -749,7 +848,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
         punches.extend(_dedupe(events, cfg.cross_hand_gap_s))
     punches.sort(key=lambda e: e["t"])
     _resolve_mutual_landings(punches, cfg.mutual_gap_s)
-    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads, "heads": heads}
+    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads, "heads": heads, "zones": zones}
 
 
 def _resolve_mutual_landings(punches, gap_s):
@@ -763,6 +862,7 @@ def _resolve_mutual_landings(punches, gap_s):
             if q["fighter"] != p["fighter"] and abs(q["t"] - p["t"]) <= gap_s and p["landed"] and q["landed"]:
                 weaker = p if p["speed"] < q["speed"] else q
                 weaker["landed"] = False
+                weaker["target"] = None
 
 
 def analyze(pairs, fps, cfg=None, start_s=0.0):
