@@ -47,6 +47,7 @@ class SparringConfig:
     min_reach: float = 0.65
     lum_weight: float = 0.0
     contact_slack_s: float = 0.12  # keep checking this long past full extension; the pose lags the glove
+    min_height_share: float = 0.5  # a detection shorter than this share of the tallest one is not a fighter
     glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
     zone_pad: float = 0.12         # glove radius added around each body zone, in torso lengths
 
@@ -185,6 +186,10 @@ class FighterTracker:
 
     def update(self, dets):
         usable = [d for d in dets if _usable(d, self.cfg)]
+        if usable:
+            # onlookers, and people stretching on the floor, are much shorter in the frame than the fighters
+            tallest = max(float(d.box[3] - d.box[1]) for d in usable)
+            usable = [d for d in usable if float(d.box[3] - d.box[1]) >= self.cfg.min_height_share * tallest]
         if self.centers[0] is None:
             out = self._init(usable)
         else:

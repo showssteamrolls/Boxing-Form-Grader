@@ -9,9 +9,9 @@
       "end": 266.633,
       "counts": {
         "A": {
-          "thrown": 70,
-          "landed": 8,
-          "jab": 34,
+          "thrown": 71,
+          "landed": 10,
+          "jab": 35,
           "power": 36
         },
         "B": {
@@ -32,15 +32,15 @@
       "counts": {
         "A": {
           "thrown": 59,
-          "landed": 15,
-          "jab": 18,
-          "power": 41
+          "landed": 16,
+          "jab": 17,
+          "power": 42
         },
         "B": {
-          "thrown": 87,
-          "landed": 16,
-          "jab": 32,
-          "power": 55
+          "thrown": 85,
+          "landed": 15,
+          "jab": 31,
+          "power": 54
         }
       }
     },
@@ -53,16 +53,38 @@
       "end": 312.0,
       "counts": {
         "A": {
-          "thrown": 157,
-          "landed": 8,
-          "jab": 51,
-          "power": 106
+          "thrown": 163,
+          "landed": 13,
+          "jab": 47,
+          "power": 116
         },
         "B": {
-          "thrown": 107,
-          "landed": 15,
-          "jab": 53,
-          "power": 54
+          "thrown": 90,
+          "landed": 17,
+          "jab": 48,
+          "power": 42
+        }
+      }
+    },
+    {
+      "slug": "110126_alvin_alex_r1",
+      "title": "Alvin & Alex R1",
+      "youtube": null,
+      "video": "spars/110126_alvin_alex_r1.mp4",
+      "start": 0.0,
+      "end": 183.967,
+      "counts": {
+        "A": {
+          "thrown": 96,
+          "landed": 20,
+          "jab": 35,
+          "power": 61
+        },
+        "B": {
+          "thrown": 70,
+          "landed": 17,
+          "jab": 30,
+          "power": 40
         }
       }
     }
