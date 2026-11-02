@@ -78,7 +78,7 @@
       <dt>What it is</dt>
       <dd>Punches a fighter has thrown so far in the clip, counting both hands.</dd>
       <dt>How it's computed</dt>
-      <dd>For each hand, take the wrist's position relative to the shoulders, then its speed toward the opponent's head. Each clear peak in that speed is one punch. A peak has to be fast enough (at least 3.5 torso/s), stand out from the movement around it, and sit at least 0.18 s from the previous peak on the same hand. If both hands peak within 0.1 s, only the faster one counts. The arm also has to extend at least 0.65 torso lengths from the shoulder, which filters out guard shuffles and body-side movement.</dd>
+      <dd>For each hand, take the wrist's position relative to the shoulders, then its speed toward the opponent's head. Each clear peak in that speed is one punch. A peak has to be fast enough (at least 3.5 torso/s), stand out from the movement around it, and sit at least 0.18 s from the previous peak on the same hand. If both hands peak within 0.1 s, only the faster one counts. The arm also has to extend at least 0.65 torso lengths from the shoulder, which filters out guard shuffles and body-side movement. Two more checks remove a lead hand that is only held out or waved: during the punch the hand has to travel at least 0.20 torso lengths farther from the shoulders, and its peak speed has to be at least 1.5 times its typical speed in the second before. A hand that drifts out or keeps moving fails both.</dd>
       <dt>Read it as</dt>
       <dd>Volume, including punches that were blocked or missed. Feints and slow pawing jabs under the speed cutoff don't count.</dd>
     </dl>

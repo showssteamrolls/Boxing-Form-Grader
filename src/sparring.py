@@ -48,6 +48,8 @@ class SparringConfig:
     lum_weight: float = 0.0
     contact_slack_s: float = 0.12  # keep checking this long past full extension; the pose lags the glove
     min_height_share: float = 0.5  # a detection shorter than this share of the tallest one is not a fighter
+    min_extension: float = 0.20    # the hand must travel at least this far out (torso lengths) during the punch
+    burst_ratio: float = 1.5       # peak speed over the median hand speed in the second before it; waving has no burst
     glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
     zone_pad: float = 0.12         # glove radius added around each body zone, in torso lengths
 
@@ -511,6 +513,17 @@ def _arc_ratio(rel, lo, hi):
     return float(np.abs(offsets).max() / length)
 
 
+def _is_burst(approach, rel, lo, hi, peak, fps, cfg):
+    """False for a hand that drifts out or waves: it has to travel out and burst past its own baseline."""
+    r = np.linalg.norm(rel[[lo, hi]], axis=1)
+    if np.isfinite(r).all() and r[1] - r[0] < cfg.min_extension:
+        return False
+    before = np.abs(approach[max(0, lo - int(round(fps))) : lo])
+    if len(before) >= 3 and approach[peak] < cfg.burst_ratio * float(np.median(before)):
+        return False
+    return True
+
+
 def _reach(me, side, lo, hi, torso):
     shoulder = L_SHOULDER if side == "left" else R_SHOULDER
     seg = me.kp[lo : hi + 1, WRIST[side]] - me.kp[lo : hi + 1, shoulder]
@@ -839,6 +852,8 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0):
                 lo, hi = _movement_span(approach, rel, peak, fps, cfg)
                 reach = _reach(me, side, lo, hi, torsos[i])
                 if reach < cfg.min_reach:
+                    continue
+                if not _is_burst(approach, rel, lo, hi, peak, fps, cfg):
                     continue
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc

@@ -9,16 +9,16 @@
       "end": 266.633,
       "counts": {
         "A": {
-          "thrown": 71,
-          "landed": 10,
-          "jab": 35,
-          "power": 36
+          "thrown": 52,
+          "landed": 9,
+          "jab": 33,
+          "power": 19
         },
         "B": {
-          "thrown": 69,
-          "landed": 3,
-          "jab": 29,
-          "power": 40
+          "thrown": 56,
+          "landed": 2,
+          "jab": 27,
+          "power": 29
         }
       }
     },
@@ -31,16 +31,16 @@
       "end": 134.267,
       "counts": {
         "A": {
-          "thrown": 59,
-          "landed": 16,
-          "jab": 17,
-          "power": 42
+          "thrown": 31,
+          "landed": 12,
+          "jab": 12,
+          "power": 19
         },
         "B": {
-          "thrown": 85,
-          "landed": 15,
-          "jab": 31,
-          "power": 54
+          "thrown": 62,
+          "landed": 12,
+          "jab": 27,
+          "power": 35
         }
       }
     },
@@ -53,16 +53,16 @@
       "end": 312.0,
       "counts": {
         "A": {
-          "thrown": 163,
-          "landed": 13,
+          "thrown": 117,
+          "landed": 11,
           "jab": 47,
-          "power": 116
+          "power": 70
         },
         "B": {
-          "thrown": 90,
-          "landed": 17,
-          "jab": 48,
-          "power": 42
+          "thrown": 66,
+          "landed": 13,
+          "jab": 40,
+          "power": 26
         }
       }
     },
@@ -75,16 +75,16 @@
       "end": 183.967,
       "counts": {
         "A": {
-          "thrown": 96,
-          "landed": 20,
-          "jab": 35,
-          "power": 61
+          "thrown": 51,
+          "landed": 14,
+          "jab": 28,
+          "power": 23
         },
         "B": {
-          "thrown": 70,
-          "landed": 17,
-          "jab": 30,
-          "power": 40
+          "thrown": 39,
+          "landed": 9,
+          "jab": 23,
+          "power": 16
         }
       }
     }
