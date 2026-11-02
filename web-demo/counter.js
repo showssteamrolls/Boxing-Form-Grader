@@ -333,39 +333,83 @@
     ctx.clearRect(0, 0, w, h);
     if (!state.showOverlay || !state.pose) return;
     const pose = state.pose;
+    const GREEN = "57,255,122";
+    const ARMS = { left: [[1, 3], [3, 5]], right: [[2, 4], [4, 6]] };
+    // fade-out strength of a landed-punch flash per fighter/hand, 1 at contact
+    const flash = { A: { left: 0, right: 0 }, B: { left: 0, right: 0 } };
+    for (const p of state.spar.punches) {
+      if (!p.landed) continue;
+      const age = t - p.t;
+      if (age < -0.12 || age > 0.5) continue;
+      const v = age < 0 ? 1 : 1 - age / 0.5;
+      flash[p.fighter][p.hand] = Math.max(flash[p.fighter][p.hand], v);
+    }
+    const drawBone = (pa, pb) => {
+      ctx.beginPath();
+      ctx.moveTo(pa[0], pa[1]);
+      ctx.lineTo(pb[0], pb[1]);
+      ctx.stroke();
+    };
     for (const id of FIGHTERS) {
       const row = core.poseAt(pose, id, t);
       if (!row) continue;
       const pt = (j) => (row[j * 2] < 0 ? null : [(row[j * 2] / 1000) * w, (row[j * 2 + 1] / 1000) * h]);
+      ctx.lineCap = "butt";
+      ctx.lineJoin = "miter";
+      ctx.shadowBlur = 0;
       ctx.strokeStyle = COLORS[id];
-      ctx.fillStyle = COLORS[id];
-      ctx.lineWidth = 3 * dpr;
-      ctx.lineCap = "round";
-      ctx.shadowColor = "rgba(0,0,0,0.7)";
-      ctx.shadowBlur = 3 * dpr;
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 1.5 * dpr;
       for (const [a, b] of BONES) {
         const pa = pt(a), pb = pt(b);
-        if (!pa || !pb) continue;
-        ctx.beginPath();
-        ctx.moveTo(pa[0], pa[1]);
-        ctx.lineTo(pb[0], pb[1]);
-        ctx.stroke();
+        if (pa && pb) drawBone(pa, pb);
       }
+      // head: thin ring plus crosshair ticks
       const nose = pt(0), ls = pt(1), rs = pt(2);
       if (nose && ls && rs) {
+        const r = Math.max(5 * dpr, Math.hypot(ls[0] - rs[0], ls[1] - rs[1]) * 0.35);
+        ctx.lineWidth = 1 * dpr;
         ctx.beginPath();
-        ctx.arc(nose[0], nose[1], Math.max(5 * dpr, Math.hypot(ls[0] - rs[0], ls[1] - rs[1]) * 0.35), 0, Math.PI * 2);
+        ctx.arc(nose[0], nose[1], r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(nose[0] - r * 1.5, nose[1]); ctx.lineTo(nose[0] - r * 0.6, nose[1]);
+        ctx.moveTo(nose[0] + r * 0.6, nose[1]); ctx.lineTo(nose[0] + r * 1.5, nose[1]);
+        ctx.moveTo(nose[0], nose[1] - r * 1.5); ctx.lineTo(nose[0], nose[1] - r * 0.6);
+        ctx.moveTo(nose[0], nose[1] + r * 0.6); ctx.lineTo(nose[0], nose[1] + r * 1.5);
         ctx.stroke();
       }
-      ctx.shadowBlur = 0;
-      for (const j of [5, 6]) {
+      // landed-punch flash: the arm that connected glows green and fades
+      for (const hand of ["left", "right"]) {
+        const v = flash[id][hand];
+        if (v <= 0) continue;
+        ctx.strokeStyle = `rgba(${GREEN},${0.25 + 0.75 * v})`;
+        ctx.shadowColor = `rgba(${GREEN},${v})`;
+        ctx.shadowBlur = 12 * v * dpr;
+        ctx.lineWidth = (2 + 1.5 * v) * dpr;
+        for (const [a, b] of ARMS[hand]) {
+          const pa = pt(a), pb = pt(b);
+          if (pa && pb) drawBone(pa, pb);
+        }
+        ctx.shadowBlur = 0;
+      }
+      ctx.globalAlpha = 1;
+      // joint markers: small hollow squares (shoulders, elbows, hips), filled for wrists
+      for (const j of [1, 2, 3, 4, 7, 8, 5, 6]) {
         const p = pt(j);
         if (!p) continue;
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 6 * dpr, 0, Math.PI * 2);
-        ctx.fill();
+        const wrist = j === 5 || j === 6;
+        const hand = j === 5 ? "left" : "right";
+        const v = wrist ? flash[id][hand] : 0;
+        const sz = (wrist ? 4 : 3) * dpr;
+        ctx.strokeStyle = v > 0 ? `rgb(${GREEN})` : COLORS[id];
+        ctx.fillStyle = v > 0 ? `rgb(${GREEN})` : COLORS[id];
+        ctx.lineWidth = 1 * dpr;
+        if (wrist) ctx.fillRect(p[0] - sz, p[1] - sz, sz * 2, sz * 2);
+        else ctx.strokeRect(p[0] - sz, p[1] - sz, sz * 2, sz * 2);
       }
     }
+    // punch markers: thin expanding ring at the wrist; green when it landed
     for (const p of state.spar.punches) {
       const age = t - p.t;
       if (age < 0 || age > 0.45) continue;
@@ -375,11 +419,11 @@
       if (row[j * 2] < 0) continue;
       const cx = (row[j * 2] / 1000) * w, cy = (row[j * 2 + 1] / 1000) * h;
       const k = age / 0.45;
-      ctx.strokeStyle = p.landed ? "#ffffff" : COLORS[p.fighter];
+      ctx.strokeStyle = p.landed ? `rgb(${GREEN})` : COLORS[p.fighter];
       ctx.globalAlpha = 1 - k;
-      ctx.lineWidth = (p.landed ? 4 : 2.5) * dpr;
+      ctx.lineWidth = 1.25 * dpr;
       ctx.beginPath();
-      ctx.arc(cx, cy, (10 + 26 * k) * dpr, 0, Math.PI * 2);
+      ctx.arc(cx, cy, (8 + 24 * k) * dpr, 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
