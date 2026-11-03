@@ -13,6 +13,7 @@ from sparring import (  # noqa: E402
     _landed,
     zone_series,
     _is_burst,
+    body_outline,
     _resolve_mutual_landings,
     head_center,
     head_ellipse,
@@ -448,3 +449,15 @@ def test_wave_filter_rejects_drift_and_keeps_a_burst():
     approach[:30] = 5.0                            # constant fast waving: no burst over its own baseline
     approach[30] = 6.0
     assert not _is_burst(approach, rel, 28, 35, 30, fps, cfg)
+
+
+def test_wider_body_gets_a_wider_outline_that_narrows_in_profile():
+    front = broad_opponent()
+    narrow = body_outline(front, 100.0, front)[0]
+    wide = body_outline(front, 100.0, front, girth={"levels": [0, 0.25, 0.5, 0.75, 1.0], "widths": [1.3] * 5})[0]
+    assert (wide[5][0] - wide[0][0]) > (narrow[5][0] - narrow[0][0])
+    turned = broad_opponent()
+    turned.kp[0, L_SH], turned.kp[0, R_SH] = (505, 200), (495, 200)
+    turned.kp[0, L_HIP], turned.kp[0, R_HIP] = (505, 300), (495, 300)
+    side = body_outline(turned, 100.0, turned, girth={"levels": [0, 0.25, 0.5, 0.75, 1.0], "widths": [1.3] * 5})[0]
+    assert (side[3][0] - side[2][0]) < (wide[3][0] - wide[2][0])

@@ -25,6 +25,11 @@ from sparring import (  # noqa: E402
     appearance,
     resolve_identity,
     APPEARANCE_DIMS,
+    GIRTH_LEVELS,
+    stack_tracks,
+    clean_track,
+    torso_length,
+    L_SHOULDER, R_SHOULDER, L_HIP, R_HIP,
 )
 
 YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
@@ -275,6 +280,103 @@ def blur_display(raw, dst, frames, pairs, fps, start, size, cfg):
     stamp.write_text(sig)
 
 
+def calibrate_girth(video_path, pairs, fps, cfg, seg_model, slug, samples=60, recalibrate=False):
+    """Measure each fighter's body width from person silhouettes on a sample of clear frames.
+
+    Pose points sit on the joints, so they understate a real body (more so for a bigger fighter).
+    A segmentation model gives the silhouette; width is read across the torso at five heights from
+    hip line to shoulder line, normalised by torso length. A low percentile over the sampled frames
+    keeps arms and gloves held out to the side from inflating it. Cached next to the detections.
+    """
+    path = CACHE_DIR / f"{slug}.girth.json"
+    if path.exists() and not recalibrate:
+        data = json.loads(path.read_text())
+        return [{"levels": d["levels"], "widths": d["widths"]} for d in data]
+    from ultralytics import YOLO
+
+    tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
+    torsos = [torso_length(t) for t in tracks]
+    n = len(tracks[0].kp)
+    # frames where the fighter faces the camera (shoulders at their widest spread) and the two boxes do not touch
+    wanted = {}
+    for i in (0, 1):
+        spread = np.abs(tracks[i].kp[:, L_SHOULDER, 0] - tracks[i].kp[:, R_SHOULDER, 0])
+        ref = np.nanpercentile(spread, 90) if np.isfinite(spread).sum() > 10 else np.nan
+        good = []
+        for k in range(n):
+            kp = tracks[i].kp[k]
+            if np.isnan(kp[[L_SHOULDER, R_SHOULDER, L_HIP, R_HIP]]).any() or not spread[k] >= 0.85 * ref:
+                continue
+            a, b = tracks[0].box[k], tracks[1].box[k]
+            if np.isnan(a).any() or np.isnan(b).any() or (a[2] > b[0] and b[2] > a[0]):
+                continue
+            good.append(k)
+        if len(good) < 5:
+            return [None, None]
+        for j in np.linspace(0, len(good) - 1, min(samples, len(good))):
+            wanted.setdefault(good[int(j)], set()).add(i)
+    picks = sorted(wanted)
+    model = YOLO(seg_model)
+    cap = cv2.VideoCapture(str(video_path))
+    widths = [[[] for _ in GIRTH_LEVELS] for _ in (0, 1)]
+    for k in picks:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, k)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        res = model(frame, classes=[0], imgsz=960, retina_masks=True, verbose=False)[0]
+        if res.masks is None:
+            continue
+        masks = res.masks.data.cpu().numpy() > 0.5
+        boxes = res.boxes.xyxy.cpu().numpy()
+        for i in sorted(wanted[k]):
+            tb = tracks[i].box[k]
+            best, best_iou = None, 0.3
+            for m, bx in zip(masks, boxes):
+                x0, y0 = max(tb[0], bx[0]), max(tb[1], bx[1])
+                x1, y1 = min(tb[2], bx[2]), min(tb[3], bx[3])
+                inter = max(0, x1 - x0) * max(0, y1 - y0)
+                iou = inter / ((tb[2] - tb[0]) * (tb[3] - tb[1]) + (bx[2] - bx[0]) * (bx[3] - bx[1]) - inter + 1e-9)
+                if iou > best_iou:
+                    best, best_iou = m, iou
+            if best is None:
+                continue
+            kp = tracks[i].kp[k]
+            hips = (kp[L_HIP] + kp[R_HIP]) / 2.0
+            sh = (kp[L_SHOULDER] + kp[R_SHOULDER]) / 2.0
+            for li, lv in enumerate(GIRTH_LEVELS):
+                c = hips + lv * (sh - hips)
+                x, y = int(round(c[0])), int(round(c[1]))
+                if not (0 <= y < best.shape[0] and 0 <= x < best.shape[1]):
+                    continue
+                row = best[y]
+                if not row[x]:
+                    near = np.flatnonzero(row[max(0, x - 6): x + 7])
+                    if len(near) == 0:
+                        continue
+                    x = max(0, x - 6) + int(near[len(near) // 2])
+                lo = x
+                while lo > 0 and row[lo - 1]:
+                    lo -= 1
+                hi = x
+                while hi < len(row) - 1 and row[hi + 1]:
+                    hi += 1
+                widths[i][li].append((hi - lo + 1) / torsos[i])
+    cap.release()
+    out = []
+    for i in (0, 1):
+        ws = []
+        for li in range(len(GIRTH_LEVELS)):
+            vals = widths[i][li]
+            ws.append(float(np.percentile(vals, 35)) if len(vals) >= 5 else None)
+        if any(w is None for w in ws):
+            out.append(None)
+            continue
+        out.append({"levels": list(GIRTH_LEVELS), "widths": [float(np.clip(w, 0.4, 1.6)) for w in ws]})
+    path.write_text(json.dumps([o for o in out]))
+    return out
+
+
 def update_manifest(out_dir, slug, report):
     path = out_dir / "index.json"
     manifest = json.loads(path.read_text()) if path.exists() else {"spars": []}
@@ -314,6 +416,9 @@ def main():
     parser.add_argument("--jab-max-arc", type=float, default=None)
     parser.add_argument("--min-reach", type=float, default=None)
     parser.add_argument("--color-weight", type=float, default=None)
+    parser.add_argument("--seg-model", default=str(ROOT / "models" / "yolo11s-seg.pt"), help="Person segmentation weights, used to measure each fighter's body width")
+    parser.add_argument("--no-girth", action="store_true", help="Skip the silhouette measurement and size the targets from pose points only")
+    parser.add_argument("--recalibrate", action="store_true", help="Measure body width again instead of using the cached values")
     args = parser.parse_args()
 
     cfg = SparringConfig()
@@ -358,7 +463,11 @@ def main():
     pairs = track_frames(frames, fps, cfg)
     if page_video:
         blur_display(display_raw, display_path, frames, pairs, fps, args.start, size, cfg)
-    analysis = analyze_full(pairs, fps, cfg, start_s=args.start)
+    girth = calibrate_girth(video_path, pairs, fps, cfg, args.seg_model, slug, recalibrate=args.recalibrate) if not args.no_girth else None
+    if girth:
+        print("Body width (torso lengths, hips to shoulders): " + " | ".join(
+            "-" if g is None else " ".join(f"{w:.2f}" for w in g["widths"]) for g in girth))
+    analysis = analyze_full(pairs, fps, cfg, start_s=args.start, girth=girth)
     punches, stances = analysis["punches"], analysis["stances"]
     end_s = args.start + len(frames) / fps
 
