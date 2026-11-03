@@ -786,8 +786,12 @@ def body_target(track, torso, opp_track, girth=None, geo=None):
         if np.isnan(up[k]).any() or np.isnan(phi[k]):
             continue
         left, right = [], []
-        for b in BODY_LEVELS:
-            half = _body_width(b, geo, girth) * torso / 2.0
+        halves = [_body_width(b, geo, girth) * torso / 2.0 for b in BODY_LEVELS]
+        # no pinched waist: the middle is at least as wide as the average of hips and shoulders, so the
+        # target reads as one torso shape
+        keep = 0.95 * (halves[0] + halves[-1]) / 2.0
+        halves = [halves[0]] + [max(h, keep) for h in halves[1:-1]] + [halves[-1]]
+        for b, half in zip(BODY_LEVELS, halves):
             reach = half * abs(np.cos(phi[k])) + 0.7 * half * abs(np.sin(phi[k]))
             c = hips[k] + b * up[k]
             left.append((c[0] - reach, c[1]))
