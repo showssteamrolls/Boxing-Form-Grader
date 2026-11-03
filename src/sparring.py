@@ -50,8 +50,11 @@ class SparringConfig:
     min_height_share: float = 0.5  # a detection shorter than this share of the tallest one is not a fighter
     min_extension: float = 0.20    # the hand must travel at least this far out (torso lengths) during the punch
     burst_ratio: float = 1.5       # peak speed over the median hand speed in the second before it; waving has no burst
+    background_share: float = 0.55  # people shorter than this share of a fighter's height are background
+    torso_scale: float = 1.10      # the shoulder-hip box counts too, scaled about its center
+    shoulder_clear: float = 0.20   # ...except right at a shoulder
     glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
-    zone_pad: float = 0.20         # glove radius added around each body zone, in torso lengths
+    zone_pad: float = 0.25         # glove radius added around each body zone, in torso lengths
 
 
 @dataclass
@@ -785,7 +788,7 @@ def _on_guard(kp, w, torso, cfg):
 
 
 def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, zones=None):
-    """Name of the target the wrist reaches (face or a body zone), else None. Falsy when nothing is hit.
+    """Name of the target the fist reaches (face or a body zone), else None. Falsy when nothing is hit.
 
     Face: the ellipse from forehead and eyes down to the chin, across to the ears. Body: the
     solar plexus, liver, spleen and core zones that face the attacker (or the camera). A contact is
@@ -806,11 +809,20 @@ def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, zones=None):
             head = head_center(kp, opp_torso)
             if head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso:
                 return "head"
+        facing = False
         if zones is not None and k < len(zones):
             for zi, name in enumerate(ZONE_NAMES):
                 z = zones[k, zi]
-                if np.isfinite(z).all() and z[5] > 0.5 and _in_zone(w, z, cfg.zone_pad * opp_torso):
-                    return name
+                if np.isfinite(z).all() and z[5] > 0.5:
+                    facing = True
+                    if _in_zone(w, z, cfg.zone_pad * opp_torso):
+                        return name
+        quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
+        if facing and not np.isnan(quad).any():
+            center = quad.mean(axis=0)
+            near_shoulder = min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso
+            if _in_quad(w, center + (quad - center) * cfg.torso_scale) and not near_shoulder:
+                return "torso"
     return None
 
 

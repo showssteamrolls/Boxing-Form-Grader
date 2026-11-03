@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -93,8 +94,8 @@ def prepare_video(src, slug, out_dir):
     """
     src_h, src_fps = _probe(src)
     analysis = _encode(src, ROOT / "data" / "analysis" / f"{slug}.mp4", min(720, src_h), 30, 27)
-    display = _encode(src, out_dir / f"{slug}.mp4", min(1080, src_h), 60 if src_fps > 45 else 30, 28)
-    return analysis, display
+    raw = _encode(src, ROOT / "data" / "analysis" / f"{slug}.display.mp4", min(1080, src_h), 60 if src_fps > 45 else 30, 28)
+    return analysis, raw, out_dir / f"{slug}.mp4"
 
 
 def save_detections(path, frames, fps, size, meta):
@@ -195,12 +196,83 @@ def refresh_appearance(video_path, frames, start_s, stride):
     cap.release()
 
 
+def fighter_height(frames):
+    """Typical fighter height in the frame: the median over frames of the tallest person found."""
+    tallest = [max(float(d.box[3] - d.box[1]) for d in dets) for dets in frames if dets]
+    return float(np.median(tallest)) if tallest else 0.0
+
+
+def is_background(det, ref_h, cfg):
+    return float(det.box[3] - det.box[1]) < cfg.background_share * ref_h
+
+
 def track_frames(frames, fps, cfg):
+    """Track the two fighters. People much shorter than a fighter (onlookers, someone on the floor) are ignored,
+    so nothing gets tracked when the fighters walk out of frame."""
+    ref_h = fighter_height(frames)
     tracker = FighterTracker(fps, cfg)
-    pairs = [tracker.update(dets) for dets in frames]
+    pairs = [tracker.update([d for d in dets if not is_background(d, ref_h, cfg)]) for dets in frames]
     pairs, flips = resolve_identity(pairs)
     print(f"Identity pass (glove color and top brightness): {flips} order changes applied")
     return pairs
+
+
+def blur_display(raw, dst, frames, pairs, fps, start, size, cfg):
+    """Write the page video with everyone who is not a fighter blurred out.
+
+    Blur boxes come from the pose detections of people shorter than a fighter, held for 0.17 s either
+    side so a flickering detection does not flicker the blur. Fighter boxes are always left sharp.
+    """
+    ref_h = fighter_height(frames)
+    boxes = [[d.box for d in dets if is_background(d, ref_h, cfg)] for dets in frames]
+    sig = hashlib.md5(json.dumps([[np.round(b).astype(int).tolist() for b in bs] for bs in boxes]).encode()).hexdigest()
+    stamp = ROOT / "data" / "analysis" / f"{dst.stem}.blur"
+    if dst.exists() and stamp.exists() and stamp.read_text() == sig and dst.stat().st_mtime >= raw.stat().st_mtime:
+        return
+    cap = cv2.VideoCapture(str(raw))
+    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    dfps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    sx, sy = width / size[0], height / size[1]
+    tmp = dst.with_suffix(".tmp.mp4")
+    ff = subprocess.Popen(
+        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}", "-r", f"{dfps}",
+         "-i", "-", "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+         "-movflags", "+faststart", "-an", str(tmp)],
+        stdin=subprocess.PIPE,
+    )
+    hold = max(1, int(round(0.17 * fps)))
+    i = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        a = int(round((i / dfps - start) * fps))
+        near = [b for k in range(max(0, a - hold), min(len(boxes), a + hold + 1)) for b in boxes[k]]
+        if near and 0 <= a < len(boxes):
+            out = frame.copy()
+            for x0, y0, x1, y1 in near:
+                pw, ph = 0.15 * (x1 - x0), 0.08 * (y1 - y0)
+                X0, X1 = int(max(0, (x0 - pw) * sx)), int(min(width, (x1 + pw) * sx))
+                Y0, Y1 = int(max(0, (y0 - ph) * sy)), int(min(height, (y1 + ph) * sy))
+                if X1 - X0 < 4 or Y1 - Y0 < 4:
+                    continue
+                k = max(3, ((Y1 - Y0) // 6) | 1)
+                out[Y0:Y1, X0:X1] = cv2.GaussianBlur(frame[Y0:Y1, X0:X1], (k, k), 0)
+            for d in (pairs[a] if a < len(pairs) else []):
+                if d is None:
+                    continue
+                x0, y0, x1, y1 = d.box
+                X0, X1 = int(max(0, x0 * sx)), int(min(width, x1 * sx))
+                Y0, Y1 = int(max(0, y0 * sy)), int(min(height, y1 * sy))
+                out[Y0:Y1, X0:X1] = frame[Y0:Y1, X0:X1]
+            frame = out
+        ff.stdin.write(frame.tobytes())
+        i += 1
+    ff.stdin.close()
+    ff.wait()
+    cap.release()
+    tmp.replace(dst)
+    stamp.write_text(sig)
 
 
 def update_manifest(out_dir, slug, report):
@@ -258,7 +330,7 @@ def main():
     else:
         src = Path(args.video)
         slug_hint = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or src.stem).strip("-")
-        video_path, display_path = prepare_video(src, slug_hint, out_dir)
+        video_path, display_raw, display_path = prepare_video(src, slug_hint, out_dir)
         page_video = f"spars/{display_path.name}"
 
     slug = re.sub(r"[^A-Za-z0-9_-]+", "-", args.slug or yt or video_path.stem).strip("-")
@@ -284,6 +356,8 @@ def main():
         save_detections(cache_path, frames, fps, size, meta)
 
     pairs = track_frames(frames, fps, cfg)
+    if page_video:
+        blur_display(display_raw, display_path, frames, pairs, fps, args.start, size, cfg)
     analysis = analyze_full(pairs, fps, cfg, start_s=args.start)
     punches, stances = analysis["punches"], analysis["stances"]
     end_s = args.start + len(frames) / fps

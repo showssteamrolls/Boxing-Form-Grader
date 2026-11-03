@@ -49,6 +49,7 @@
   height: 100%;
   pointer-events: none;
   z-index: 3;
+  opacity: 0.6;
 }
 .pc-overlay-btn {
   position: absolute;

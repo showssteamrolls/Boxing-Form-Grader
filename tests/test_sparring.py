@@ -314,9 +314,9 @@ def broad_opponent(front=True):
     return opp
 
 
-def broad_hit(opp, wrist):
+def broad_hit(opp, wrist, cfg=None):
     zones = zone_series(opp, 100.0, opp)
-    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig(), zones=zones)
+    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, cfg or SparringConfig(), zones=zones)
 
 
 def test_landed_counts_head_and_body_zones():
@@ -326,8 +326,8 @@ def test_landed_counts_head_and_body_zones():
     assert broad_hit(front, (500, 292)) == "core"
 
 
-def test_landed_ignores_chest_and_back():
-    assert broad_hit(broad_opponent(), (500, 196)) is None  # chest line, not a target
+def test_landed_counts_the_torso_box_but_not_the_back():
+    assert broad_hit(broad_opponent(), (500, 205), SparringConfig(zone_pad=0.0)) == "torso"  # in the shoulder-hip box, outside the named zones
     back = broad_opponent(front=False)
     assert broad_hit(back, (500, 232)) is None
     assert broad_hit(back, (500, 272)) is None
