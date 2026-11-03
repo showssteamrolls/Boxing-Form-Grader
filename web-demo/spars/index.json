@@ -10,13 +10,13 @@
       "counts": {
         "A": {
           "thrown": 52,
-          "landed": 10,
+          "landed": 12,
           "jab": 33,
           "power": 19
         },
         "B": {
           "thrown": 56,
-          "landed": 3,
+          "landed": 5,
           "jab": 27,
           "power": 29
         }
@@ -38,7 +38,7 @@
         },
         "B": {
           "thrown": 62,
-          "landed": 12,
+          "landed": 16,
           "jab": 27,
           "power": 35
         }
@@ -53,15 +53,15 @@
       "end": 312.0,
       "counts": {
         "A": {
-          "thrown": 117,
-          "landed": 16,
-          "jab": 47,
+          "thrown": 116,
+          "landed": 20,
+          "jab": 46,
           "power": 70
         },
         "B": {
-          "thrown": 66,
-          "landed": 16,
-          "jab": 40,
+          "thrown": 65,
+          "landed": 18,
+          "jab": 39,
           "power": 26
         }
       }
@@ -75,16 +75,16 @@
       "end": 183.967,
       "counts": {
         "A": {
-          "thrown": 51,
-          "landed": 15,
+          "thrown": 50,
+          "landed": 16,
           "jab": 28,
-          "power": 23
+          "power": 22
         },
         "B": {
-          "thrown": 39,
-          "landed": 9,
-          "jab": 23,
-          "power": 16
+          "thrown": 32,
+          "landed": 7,
+          "jab": 21,
+          "power": 11
         }
       }
     }
