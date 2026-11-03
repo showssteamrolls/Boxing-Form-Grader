@@ -295,39 +295,104 @@ def identity_score(det):
     return (red if red is not None else 0.0) + (2.0 * (0.25 - lum) if lum is not None else 0.0)
 
 
-def resolve_identity(pairs, min_margin=0.08, window=15):
-    """Fix fighter swaps from appearance. Slot 0 becomes the fighter with the redder gloves and darker top.
+def _box_iou(a, b):
+    x0, y0 = max(a[0], b[0]), max(a[1], b[1])
+    x1, y1 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
 
-    Every frame with both fighters gets a margin: how much more "red glove, dark top" slot 0 looks
-    than slot 1. The margin is median-smoothed over about half a second. Where it is clearly
-    positive the order is kept, where it is clearly negative the two are swapped, and where it is
-    unclear the previous frame's decision holds. This also repairs swaps inside clinches.
-    """
+
+def resolve_identity(pairs, min_margin=0.08, window=15, clear_iou=0.10):
+    """Lock fighter identity. Slot 0 is the fighter with the redder gloves and darker top.
+
+    Appearance is only trusted while the fighters are apart (boxes barely overlap), because in a
+    clinch their gloves and tops bleed into each other's measurements. In those clear frames the order
+    comes from the margin (how much more "red glove, dark top" slot 0 looks than slot 1), median-smoothed
+    over about half a second, holding the last decision when it is unclear. Through a clinch the order is
+    not re-measured: the pair is matched to where each fighter was just before the clinch and where they
+    are just after it, so each label stays on the same person.
+        """
     n = len(pairs)
+    clear = np.zeros(n, bool)
     margin = np.full(n, np.nan)
     for k, p in enumerate(pairs):
+        if p[0] is None or p[1] is None:
+            continue
+        if _box_iou(p[0].box, p[1].box) > clear_iou:
+            continue
+        clear[k] = True
         a, b = identity_score(p[0]), identity_score(p[1])
         if a is not None and b is not None:
             margin[k] = a - b
     if not np.isfinite(margin).any():
         return pairs, 0
+    # state[k] True means this frame's pair is in the wrong order
     half = window // 2
     smooth = np.full(n, np.nan)
     for k in range(n):
+        if not clear[k]:
+            continue
         w = margin[max(0, k - half): k + half + 1]
         w = w[np.isfinite(w)]
         if len(w) >= 3:
             smooth[k] = np.median(w)
     state = np.zeros(n, bool)
+    decided = np.zeros(n, bool)
     current = None
-    first = next((k for k in range(n) if np.isfinite(smooth[k]) and abs(smooth[k]) >= min_margin), None)
-    if first is None:
-        return pairs, 0
-    current = smooth[first] < 0
     for k in range(n):
-        if np.isfinite(smooth[k]) and abs(smooth[k]) >= min_margin:
-            current = smooth[k] < 0
-        state[k] = current
+        if clear[k] and np.isfinite(smooth[k]) and abs(smooth[k]) >= min_margin:
+            current = bool(smooth[k] < 0)
+        if clear[k] and current is not None:
+            state[k] = current
+            decided[k] = True
+    if not decided.any():
+        return pairs, 0
+
+    def centers(k):
+        p = pairs[k]
+        order = (1, 0) if state[k] else (0, 1)
+        return [_center(p[i].box) if p[i] is not None else None for i in order]
+
+    # carry the order through frames where appearance is not trusted
+    k = 0
+    while k < n:
+        if decided[k]:
+            k += 1
+            continue
+        s = k
+        while k < n and not decided[k]:
+            k += 1
+        e = k - 1
+        before = centers(s - 1) if s - 1 >= 0 and decided[s - 1] else None
+        after = centers(e + 1) if e + 1 < n and decided[e + 1] else None
+        prev = state[s - 1] if s - 1 >= 0 else False
+        for j in range(s, e + 1):
+            if before is not None and after is not None:
+                t = (j - s + 1) / (e - s + 2)
+                target = [
+                    None if before[f] is None or after[f] is None else before[f] * (1 - t) + after[f] * t
+                    for f in (0, 1)
+                ]
+            else:
+                target = before or after
+            if target is None:
+                state[j] = prev
+                continue
+            p = pairs[j]
+            costs = []
+            for swap in (False, True):
+                order = (1, 0) if swap else (0, 1)
+                total = 0.0
+                for f in (0, 1):
+                    det = p[order[f]]
+                    if det is not None and target[f] is not None:
+                        total += float(np.linalg.norm(_center(det.box) - target[f])) / max(float(det.box[3] - det.box[1]), 1.0)
+                costs.append(total)
+            bias = 0.05
+            costs[int(prev)] -= bias
+            state[j] = costs[1] < costs[0]
+            prev = state[j]
     out = [[p[1], p[0]] if state[k] else list(p) for k, p in enumerate(pairs)]
     changed = int(np.sum(state[1:] != state[:-1]))
     return out, changed
