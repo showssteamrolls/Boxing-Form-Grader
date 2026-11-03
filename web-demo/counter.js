@@ -449,21 +449,6 @@
         ctx.setLineDash([]);
         ctx.globalAlpha = 0.9;
       }
-      // body outline: sized to this fighter's own build and narrowing as they turn side-on
-      if (row.length >= 58 && row[46] >= 0) {
-        ctx.setLineDash([]);
-        ctx.strokeStyle = COLORS[id];
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 1 * dpr;
-        ctx.beginPath();
-        for (let q = 0; q < 6; q++) {
-          const ox = (row[46 + q * 2] / 1000) * w, oy = (row[47 + q * 2] / 1000) * h;
-          if (q === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
-        }
-        ctx.closePath();
-        ctx.stroke();
-        ctx.globalAlpha = 0.9;
-      }
       // landed-punch flash: the arm that connected glows green and fades
       for (const hand of ["left", "right"]) {
         const v = flash[id][hand];

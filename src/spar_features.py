@@ -232,12 +232,6 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
                         int(round((np.degrees(z[4]) + 90) * 10)),
                         int(z[5] > 0.5) * 1000,
                     ])
-            outline = analysis["outlines"][i][k]
-            for x, y in outline:
-                if np.isnan(x) or np.isnan(y):
-                    flat.extend([-1, -1])
-                else:
-                    flat.extend([int(round(x / width * 1000)), int(round(y / height * 1000))])
             rows.append(flat)
         pose[fid] = rows
     return pose
