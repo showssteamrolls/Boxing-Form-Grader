@@ -11,8 +11,9 @@ from sparring import (  # noqa: E402
     FighterTracker,
     SparringConfig,
     _landed,
-    body_target,
+    zone_series,
     _is_burst,
+    body_outline,
     _resolve_mutual_landings,
     head_center,
     head_ellipse,
@@ -295,7 +296,8 @@ def opponent(elbow_l=(485, 250), elbow_r=(515, 250), wrist_l=(480, 215), wrist_r
 
 def hits(wrist, **kw):
     opp = opponent(**kw)
-    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig(), body=body_target(opp, 100.0, opp))
+    zones = zone_series(opp, 100.0, opp)
+    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, SparringConfig(), zones=zones)
 
 
 def broad_opponent(front=True):
@@ -314,28 +316,33 @@ def broad_opponent(front=True):
 
 
 def broad_hit(opp, wrist, cfg=None):
-    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, cfg or SparringConfig(), body=body_target(opp, 100.0, opp))
+    zones = zone_series(opp, 100.0, opp)
+    return _landed(opp, 100.0, np.array([wrist], dtype=float), 0, 0, cfg or SparringConfig(), zones=zones)
 
 
-def test_landed_counts_head_and_the_torso_but_not_the_back():
+def test_landed_counts_head_and_body_zones():
     assert hits((482, 172))  # on the face
     front = broad_opponent()
-    assert broad_hit(front, (500, 232)) == "torso"
-    assert broad_hit(front, (500, 292)) == "torso"
+    assert broad_hit(front, (500, 232)) == "solar_plexus"
+    assert broad_hit(front, (500, 292)) == "core"
+
+
+def test_landed_counts_the_torso_box_but_not_the_back():
+    assert broad_hit(broad_opponent(), (500, 205), SparringConfig(zone_pad=0.0)) == "torso"  # in the shoulder-hip box, outside the named zones
     back = broad_opponent(front=False)
     assert broad_hit(back, (500, 232)) is None
     assert broad_hit(back, (500, 272)) is None
 
 
-def test_body_target_narrows_when_the_body_turns_to_the_side():
+def test_zones_follow_a_body_turned_to_the_side():
     front = broad_opponent()
     turned = broad_opponent()
     turned.kp[0, L_SH], turned.kp[0, R_SH] = (505, 200), (495, 200)  # shoulders nearly stacked
     turned.kp[0, L_HIP], turned.kp[0, R_HIP] = (505, 300), (495, 300)
-    pf = body_target(front, 100.0, front)[0][0]
-    pt = body_target(turned, 100.0, turned)[0][0]
-    assert (pt[:, 0].max() - pt[:, 0].min()) <= (pf[:, 0].max() - pf[:, 0].min())
-    assert np.all(np.isfinite(pt))  # still drawn, not dropped
+    zf = zone_series(front, 100.0, front)[0]
+    zt = zone_series(turned, 100.0, turned)[0]
+    assert zt[1][2] <= zf[1][2]  # liver is no wider when seen from the side
+    assert np.all(np.isfinite(zt))  # still drawn, not dropped
 
 
 def test_landed_ignores_shoulder_hits():
@@ -444,14 +451,13 @@ def test_wave_filter_rejects_drift_and_keeps_a_burst():
     assert not _is_burst(approach, rel, 28, 35, 30, fps, cfg)
 
 
-def test_wider_body_gets_a_wider_target_that_narrows_in_profile():
+def test_wider_body_gets_a_wider_outline_that_narrows_in_profile():
     front = broad_opponent()
-    levels = {"levels": [0, 0.25, 0.5, 0.75, 1.0], "widths": [1.3] * 5}
-    narrow = body_target(front, 100.0, front)[0][0]
-    wide = body_target(front, 100.0, front, girth=levels)[0][0]
-    assert (wide[7][0] - wide[0][0]) > (narrow[7][0] - narrow[0][0])
+    narrow = body_outline(front, 100.0, front)[0]
+    wide = body_outline(front, 100.0, front, girth={"levels": [0, 0.25, 0.5, 0.75, 1.0], "widths": [1.3] * 5})[0]
+    assert (wide[5][0] - wide[0][0]) > (narrow[5][0] - narrow[0][0])
     turned = broad_opponent()
     turned.kp[0, L_SH], turned.kp[0, R_SH] = (505, 200), (495, 200)
     turned.kp[0, L_HIP], turned.kp[0, R_HIP] = (505, 300), (495, 300)
-    side = body_target(turned, 100.0, turned, girth=levels)[0][0]
-    assert (side[7][0] - side[0][0]) < (wide[7][0] - wide[0][0])
+    side = body_outline(turned, 100.0, turned, girth={"levels": [0, 0.25, 0.5, 0.75, 1.0], "widths": [1.3] * 5})[0]
+    assert (side[3][0] - side[2][0]) < (wide[3][0] - wide[2][0])

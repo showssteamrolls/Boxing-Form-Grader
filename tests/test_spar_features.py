@@ -140,6 +140,6 @@ def test_pose_export_scales_and_marks_missing():
     assert len(pose["A"]) == len(pose["B"])
     assert all(row is None for row in pose["A"])
     row = pose["B"][0]
-    assert len(row) == 39  # 9 joints, face ellipse (4), body contour (8 points), facing flag
+    assert len(row) == 58  # 9 joints, face ellipse (4), four zones (6 each), body outline (6 points)
     assert row[20] > 0 and row[21] > 0
     assert row[0] == 700 + (-25) * 1 or abs(row[0] - 675) <= 1

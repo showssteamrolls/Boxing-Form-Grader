@@ -5,6 +5,7 @@ import numpy as np
 from sparring import (
     FIGHTER_IDS,
     SparringConfig,
+    ZONE_NAMES,
     L_ELBOW,
     L_HIP,
     L_SHOULDER,
@@ -191,6 +192,7 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
         "w": int(width),
         "h": int(height),
         "joints": POSE_JOINTS,
+        "zones": list(ZONE_NAMES),
         "fist": SparringConfig().glove_ext,
     }
     for i, fid in enumerate(FIGHTER_IDS):
@@ -217,13 +219,25 @@ def build_pose(analysis, fps, start_s, width, height, hz=POSE_HZ):
                     int(round(head[2] / width * 1000)),
                     int(round(head[3] / width * 1000)),
                 ])
-            poly, ok = analysis["bodies"][i]
-            for x, y in poly[k]:
+            for zi in range(analysis["zones"][i].shape[1]):
+                z = analysis["zones"][i][k, zi]
+                if np.isnan(z).any():
+                    flat.extend([-1, -1, 0, 0, 0, 0])
+                else:
+                    flat.extend([
+                        int(round(z[0] / width * 1000)),
+                        int(round(z[1] / height * 1000)),
+                        int(round(z[2] / width * 1000)),
+                        int(round(z[3] / width * 1000)),
+                        int(round((np.degrees(z[4]) + 90) * 10)),
+                        int(z[5] > 0.5) * 1000,
+                    ])
+            outline = analysis["outlines"][i][k]
+            for x, y in outline:
                 if np.isnan(x) or np.isnan(y):
                     flat.extend([-1, -1])
                 else:
                     flat.extend([int(round(x / width * 1000)), int(round(y / height * 1000))])
-            flat.append(1000 if ok[k] > 0.5 else 0)
             rows.append(flat)
         pose[fid] = rows
     return pose
