@@ -424,19 +424,17 @@
         ctx.moveTo(cx, cy + ry * 0.6); ctx.lineTo(cx, cy + ry * 1.4);
         ctx.stroke();
       }
-      // body targets (solar plexus, liver, spleen, core): follow the torso as it turns; dashed when that
-      // side faces away from the opponent and the camera, so a punch there would not count
-      const zoneNames = pose.zones || [];
-      for (let zi = 0; zi < zoneNames.length; zi++) {
-        const o = 22 + zi * 6;
-        if (row[o] < 0) continue;
-        const zx = (row[o] / 1000) * w, zy = (row[o + 1] / 1000) * h;
-        const zrx = (row[o + 2] / 1000) * w, zry = (row[o + 3] / 1000) * w;
-        const tilt = ((row[o + 4] / 10) - 90) * Math.PI / 180;
-        const live = row[o + 5] >= 500;
-        const hit = struck[id][zoneNames[zi]] || 0;
+      // body target: one contour that follows this fighter's own torso and narrows as they turn side-on;
+      // dashed when that side faces away from the opponent and the camera, so a punch there would not count
+      if (row.length >= 39 && row[22] >= 0) {
+        const live = row[38] >= 500;
+        const hit = struck[id].torso || 0;
         ctx.beginPath();
-        ctx.ellipse(zx, zy, Math.max(zrx, 2), Math.max(zry, 2), tilt, 0, Math.PI * 2);
+        for (let q = 0; q < 8; q++) {
+          const ox = (row[22 + q * 2] / 1000) * w, oy = (row[23 + q * 2] / 1000) * h;
+          if (q === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
+        }
+        ctx.closePath();
         if (hit > 0) {
           ctx.fillStyle = `rgba(${GREEN},${0.5 * hit})`;
           ctx.fill();
@@ -447,21 +445,6 @@
         ctx.lineWidth = 1 * dpr;
         ctx.stroke();
         ctx.setLineDash([]);
-        ctx.globalAlpha = 0.9;
-      }
-      // body outline: sized to this fighter's own build and narrowing as they turn side-on
-      if (row.length >= 58 && row[46] >= 0) {
-        ctx.setLineDash([]);
-        ctx.strokeStyle = COLORS[id];
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 1 * dpr;
-        ctx.beginPath();
-        for (let q = 0; q < 6; q++) {
-          const ox = (row[46 + q * 2] / 1000) * w, oy = (row[47 + q * 2] / 1000) * h;
-          if (q === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
-        }
-        ctx.closePath();
-        ctx.stroke();
         ctx.globalAlpha = 0.9;
       }
       // landed-punch flash: the arm that connected glows green and fades

@@ -30,6 +30,8 @@ from sparring import (  # noqa: E402
     clean_track,
     torso_length,
     L_SHOULDER, R_SHOULDER, L_HIP, R_HIP,
+    L_ELBOW, R_ELBOW, L_WRIST, R_WRIST, NOSE, L_EYE, R_EYE, L_EAR, R_EAR,
+    HEAD_W, HEAD_H,
 )
 
 YOUTUBE_ID = re.compile(r"(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})")
@@ -291,7 +293,7 @@ def calibrate_girth(video_path, pairs, fps, cfg, seg_model, slug, samples=60, re
     path = CACHE_DIR / f"{slug}.girth.json"
     if path.exists() and not recalibrate:
         data = json.loads(path.read_text())
-        return [{"levels": d["levels"], "widths": d["widths"]} for d in data]
+        return [d if d is None else dict(d) for d in data]
     from ultralytics import YOLO
 
     tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
@@ -319,6 +321,7 @@ def calibrate_girth(video_path, pairs, fps, cfg, seg_model, slug, samples=60, re
     model = YOLO(seg_model)
     cap = cv2.VideoCapture(str(video_path))
     widths = [[[] for _ in GIRTH_LEVELS] for _ in (0, 1)]
+    head_ws = [[], []]
     for k in picks:
         cap.set(cv2.CAP_PROP_POS_FRAMES, k)
         ok, frame = cap.read()
@@ -344,6 +347,31 @@ def calibrate_girth(video_path, pairs, fps, cfg, seg_model, slug, samples=60, re
             kp = tracks[i].kp[k]
             hips = (kp[L_HIP] + kp[R_HIP]) / 2.0
             sh = (kp[L_SHOULDER] + kp[R_SHOULDER]) / 2.0
+            # take the arms out of the mask so they do not read as body width
+            best = best.copy().astype(np.uint8)
+            th = max(3, int(round(0.14 * torsos[i])))
+            for s_j, e_j, w_j in ((L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)):
+                if np.isnan(kp[[s_j, e_j, w_j]]).any():
+                    continue
+                start = kp[s_j] + 0.4 * (kp[e_j] - kp[s_j])
+                cv2.line(best, tuple(int(v) for v in start), tuple(int(v) for v in kp[e_j]), 0, th)
+                cv2.line(best, tuple(int(v) for v in kp[e_j]), tuple(int(v) for v in kp[w_j]), 0, th)
+            best = best > 0
+            # head width across the ear line
+            ears = kp[[L_EAR, R_EAR]]
+            ref_pts = [kp[j] for j in (NOSE, L_EYE, R_EYE) if not np.isnan(kp[j]).any()]
+            if ref_pts:
+                hy = int(round(float(np.mean([q[1] for q in ref_pts]))))
+                hx = int(round(float(np.mean([q[0] for q in ref_pts]))))
+                if 0 <= hy < best.shape[0] and 0 <= hx < best.shape[1] and best[hy, hx]:
+                    row = best[hy]
+                    lo = hx
+                    while lo > 0 and row[lo - 1]:
+                        lo -= 1
+                    hi = hx
+                    while hi < len(row) - 1 and row[hi + 1]:
+                        hi += 1
+                    head_ws[i].append((hi - lo + 1) / torsos[i])
             for li, lv in enumerate(GIRTH_LEVELS):
                 c = hips + lv * (sh - hips)
                 x, y = int(round(c[0])), int(round(c[1]))
@@ -372,7 +400,13 @@ def calibrate_girth(video_path, pairs, fps, cfg, seg_model, slug, samples=60, re
         if any(w is None for w in ws):
             out.append(None)
             continue
-        out.append({"levels": list(GIRTH_LEVELS), "widths": [float(np.clip(w, 0.4, 1.6)) for w in ws]})
+        floor = 0.85 * (ws[0] + ws[-1]) / 2.0   # arm removal can pinch the middle; a torso does not narrow that much
+        entry = {"levels": list(GIRTH_LEVELS), "widths": [float(np.clip(max(w, floor), 0.4, 1.6)) for w in ws]}
+        if len(head_ws[i]) >= 5:
+            hw = float(np.clip(np.percentile(head_ws[i], 50), 0.8 * HEAD_W, 1.5 * HEAD_W))
+            entry["head_w"] = hw
+            entry["head_h"] = float(HEAD_H * hw / HEAD_W)
+        out.append(entry)
     path.write_text(json.dumps([o for o in out]))
     return out
 
@@ -466,7 +500,7 @@ def main():
     girth = calibrate_girth(video_path, pairs, fps, cfg, args.seg_model, slug, recalibrate=args.recalibrate) if not args.no_girth else None
     if girth:
         print("Body width (torso lengths, hips to shoulders): " + " | ".join(
-            "-" if g is None else " ".join(f"{w:.2f}" for w in g["widths"]) for g in girth))
+            "-" if g is None else " ".join(f"{w:.2f}" for w in g["widths"]) + (f" | head {g['head_w']:.2f}" if 'head_w' in g else "") for g in girth))
     analysis = analyze_full(pairs, fps, cfg, start_s=args.start, girth=girth)
     punches, stances = analysis["punches"], analysis["stances"]
     end_s = args.start + len(frames) / fps

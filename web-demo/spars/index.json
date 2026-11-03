@@ -1,6 +1,28 @@
 {
   "spars": [
     {
+      "slug": "110326_ant_ryan_r5",
+      "title": "Ant & Ryan R5",
+      "youtube": null,
+      "video": "spars/110326_ant_ryan_r5.mp4",
+      "start": 0.0,
+      "end": 379.333,
+      "counts": {
+        "A": {
+          "thrown": 98,
+          "landed": 19,
+          "jab": 64,
+          "power": 34
+        },
+        "B": {
+          "thrown": 105,
+          "landed": 32,
+          "jab": 63,
+          "power": 42
+        }
+      }
+    },
+    {
       "slug": "102326_ant_ryan_r2",
       "title": "Ant & Ryan R2",
       "youtube": null,
@@ -10,13 +32,13 @@
       "counts": {
         "A": {
           "thrown": 52,
-          "landed": 15,
+          "landed": 9,
           "jab": 33,
           "power": 19
         },
         "B": {
           "thrown": 55,
-          "landed": 6,
+          "landed": 4,
           "jab": 27,
           "power": 28
         }
@@ -32,13 +54,13 @@
       "counts": {
         "A": {
           "thrown": 26,
-          "landed": 10,
+          "landed": 8,
           "jab": 11,
           "power": 15
         },
         "B": {
           "thrown": 59,
-          "landed": 24,
+          "landed": 20,
           "jab": 26,
           "power": 33
         }
@@ -54,13 +76,13 @@
       "counts": {
         "A": {
           "thrown": 112,
-          "landed": 27,
+          "landed": 20,
           "jab": 48,
           "power": 64
         },
         "B": {
           "thrown": 71,
-          "landed": 21,
+          "landed": 22,
           "jab": 39,
           "power": 32
         }
@@ -76,7 +98,7 @@
       "counts": {
         "A": {
           "thrown": 48,
-          "landed": 21,
+          "landed": 12,
           "jab": 24,
           "power": 24
         },

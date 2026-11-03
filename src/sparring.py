@@ -51,7 +51,7 @@ class SparringConfig:
     min_extension: float = 0.20    # the hand must travel at least this far out (torso lengths) during the punch
     burst_ratio: float = 1.5       # peak speed over the median hand speed in the second before it; waving has no burst
     background_share: float = 0.55  # people shorter than this share of a fighter's height are background
-    torso_scale: float = 1.10      # the shoulder-hip box counts too, scaled about its center
+    torso_scale: float = 1.20      # the torso contour is scaled about its center to allow for the glove
     shoulder_clear: float = 0.20   # ...except right at a shoulder
     glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
     zone_pad: float = 0.25         # glove radius added around each body zone, in torso lengths
@@ -647,7 +647,7 @@ def head_rise(kp, torso):
     return float((nose - mid) @ up) / torso
 
 
-def head_ellipse(kp, torso, ref_rise):
+def head_ellipse(kp, torso, ref_rise, dims=None):
     """Face target (cx, cy, half_width, half_height) in pixels, or None without a torso.
 
     Built from the nose, eyes and ears: it spans forehead, eyes and chin across to the ears. Chin
@@ -666,8 +666,9 @@ def head_ellipse(kp, torso, ref_rise):
             pts[name] = p
     rise = head_rise(kp, torso) if "nose" in pts else np.nan
     scale = 1.0 if np.isnan(rise) else float(np.clip(rise / ref_rise, 0.65, 1.0))
-    height = HEAD_H * torso * scale
-    width = HEAD_W * torso
+    head_w, head_h = dims if dims else (HEAD_W, HEAD_H)
+    height = head_h * torso * scale
+    width = head_w * torso
     if "lr" in pts and "rr" in pts:
         width = float(np.clip(np.linalg.norm(pts["lr"] - pts["rr"]) * 1.25, 0.55 * width, 1.15 * width))
     elif "le" in pts and "re" in pts:
@@ -686,33 +687,20 @@ def head_ellipse(kp, torso, ref_rise):
     return cx, cy, width / 2.0, height / 2.0
 
 
-def head_series(track, torso):
+def head_series(track, torso, dims=None):
     """Per-frame face ellipses (n, 4), smoothed, with short gaps held. NaN where nothing is known."""
     kp = track.kp
     rises = np.array([head_rise(kp[k], torso) for k in range(len(kp))])
     ref = float(np.clip(np.nanpercentile(rises, 85), 0.3, 0.8)) if np.isfinite(rises).sum() > 10 else 0.5
     out = np.full((len(kp), 4), np.nan)
     for k in range(len(kp)):
-        e = head_ellipse(kp[k], torso, ref)
+        e = head_ellipse(kp[k], torso, ref, dims)
         if e is not None:
             out[k] = e
     out = _nan_smooth(out, size=5)
     for c in range(4):
         out[:, c] = _interp_short_gaps(out[:, c], 15)
     return out
-
-
-# Body targets, in the torso's own coordinates: psi is the angle around the body (0 = front center,
-# + = the fighter's right), b runs from the hip line (0) to the shoulder line (1), wz is half-width as a
-# share of body half-width, hb is half-height in torso lengths. Chest is left out on purpose.
-ZONES = (
-    ("solar_plexus", 0.0, 0.66, 0.30, 0.12),
-    ("liver", 0.50, 0.50, 0.32, 0.14),
-    ("spleen", -0.58, 0.52, 0.30, 0.14),
-    ("core", 0.0, 0.28, 0.40, 0.16),
-)
-ZONE_NAMES = tuple(z[0] for z in ZONES)
-ZONE_COLS = 6   # cx, cy, rx, ry, tilt (radians), hittable (0 or 1)
 
 
 def _side_view(kp, torso, refs):
@@ -738,7 +726,8 @@ def _side_view(kp, torso, refs):
     return cos, sign
 
 
-GIRTH_LEVELS = (0.0, 0.25, 0.5, 0.75, 1.0)   # hip line to shoulder line
+GIRTH_LEVELS = (0.0, 0.25, 0.5, 0.75, 1.0)   # hip line to shoulder line, where the silhouette is measured
+BODY_LEVELS = (0.0, 1.0 / 3, 2.0 / 3, 1.0)   # heights the drawn and scored contour passes through
 
 
 def _frame_geometry(track, torso, opp_track):
@@ -777,70 +766,40 @@ def _body_width(b, geo, girth):
     return max(kp_w, float(np.interp(b, girth["levels"], girth["widths"])))
 
 
-def zone_series(track, torso, opp_track, girth=None, geo=None):
-    """Per-frame body targets, shape (n, len(ZONES), 6). NaN where the torso is unknown.
+def body_target(track, torso, opp_track, girth=None, geo=None):
+    """The one torso target: a contour that follows the fighter's own body, hips to shoulders.
 
-    Each zone is a point on the surface of an elliptical torso (width from the fighter's own body
-    width, depth 0.7 of the width), turned by the body's estimated yaw, so it follows the body when it
-    rotates and slides toward the near edge in profile. 'Hittable' means that surface point faces the
-    opponent or the camera; a back turned to both is not a target.
+    Returns (poly, ok). poly is (n, 8, 2): the left edge from hips up to shoulders, then the right edge
+    back down. Width at each height is the fighter's measured silhouette width (the pose joints alone
+    understate a real body); it narrows as the body turns side-on, since the front-to-back depth is
+    about 0.7 of the width. ok is 0 while the fighter's back is turned to both the opponent and the
+    camera, when nothing on the torso is a target.
     """
     n = len(track.kp)
-    out = np.full((n, len(ZONES), ZONE_COLS), np.nan)
+    poly = np.full((n, 2 * len(BODY_LEVELS), 2), np.nan)
+    ok = np.zeros(n)
     if n == 0:
-        return out
+        return poly, ok
     geo = geo or _frame_geometry(track, torso, opp_track)
-    phi, toward, hips, up, tilt = geo["phi"], geo["toward"], geo["hips"], geo["up"], geo["tilt"]
+    phi, hips, up, toward = geo["phi"], geo["hips"], geo["up"], geo["toward"]
     for k in range(n):
         if np.isnan(up[k]).any() or np.isnan(phi[k]):
             continue
-        length = float(np.linalg.norm(up[k]))
-        for zi, (_, psi, b, wz, hb) in enumerate(ZONES):
-            half = _body_width(b, geo, girth) * torso / 2.0
-            depth = 0.7 * half
-            cx = hips[k, 0] + b * up[k, 0] + half * np.sin(psi) * -np.cos(phi[k]) + depth * np.cos(psi) * np.sin(phi[k])
-            cy = hips[k, 1] + b * up[k, 1]
-            rx = max(0.18 * torso, wz * (half * abs(np.cos(phi[k])) + depth * abs(np.sin(phi[k]))))
-            ry = hb * length
-            chi = phi[k] - psi
-            hittable = (toward[k] * np.sin(chi) > 0.5) or (np.cos(chi) > 0.6)
-            out[k, zi] = (cx, cy, rx, ry, tilt[k], 1.0 if hittable else 0.0)
-    for zi in range(len(ZONES)):
-        for c in range(5):
-            out[:, zi, c] = _nan_smooth(out[:, zi, c][:, None], 5)[:, 0]
-            out[:, zi, c] = _interp_short_gaps(out[:, zi, c], 15)
-        out[:, zi, 5] = _interp_short_gaps(out[:, zi, 5], 15)
-    return out
-
-
-def body_outline(track, torso, opp_track, girth=None, geo=None):
-    """Per-frame torso outline, shape (n, 6, 2): left and right edge at the hips, belly and shoulders.
-
-    Width follows the fighter's own body (measured silhouette when available) and the turn of the body,
-    so a wider fighter gets a wider target and the outline narrows as they turn side-on.
-    """
-    n = len(track.kp)
-    out = np.full((n, 6, 2), np.nan)
-    if n == 0:
-        return out
-    geo = geo or _frame_geometry(track, torso, opp_track)
-    phi, hips, up = geo["phi"], geo["hips"], geo["up"]
-    for k in range(n):
-        if np.isnan(up[k]).any() or np.isnan(phi[k]):
-            continue
-        pts = []
-        for b in (0.0, 0.5, 1.0):
+        left, right = [], []
+        for b in BODY_LEVELS:
             half = _body_width(b, geo, girth) * torso / 2.0
             reach = half * abs(np.cos(phi[k])) + 0.7 * half * abs(np.sin(phi[k]))
             c = hips[k] + b * up[k]
-            pts.append((c[0] - reach, c[1], c[0] + reach))
-        (hl, hy, hr), (bl, by, br), (sl, sy, sr) = pts
-        out[k] = [(hl, hy), (bl, by), (sl, sy), (sr, sy), (br, by), (hr, hy)]
-    for i in range(6):
+            left.append((c[0] - reach, c[1]))
+            right.append((c[0] + reach, c[1]))
+        poly[k] = left + right[::-1]
+        ok[k] = 1.0 if (toward[k] * np.sin(phi[k]) > 0.5 or np.cos(phi[k]) > 0.6) else 0.0
+    for i in range(poly.shape[1]):
         for c in range(2):
-            out[:, i, c] = _nan_smooth(out[:, i, c][:, None], 5)[:, 0]
-            out[:, i, c] = _interp_short_gaps(out[:, i, c], 15)
-    return out
+            poly[:, i, c] = _nan_smooth(poly[:, i, c][:, None], 5)[:, 0]
+            poly[:, i, c] = _interp_short_gaps(poly[:, i, c], 15)
+    ok = _interp_short_gaps(np.where(np.isnan(poly[:, 0, 0]), np.nan, ok), 15)
+    return poly, np.nan_to_num(ok)
 
 
 def _in_poly(p, pts):
@@ -858,16 +817,6 @@ def _in_poly(p, pts):
         elif cur != sign:
             return False
     return True
-
-
-def _in_zone(w, zone, pad):
-    cx, cy, rx, ry, tilt, _ = zone
-    dx, dy = w[0] - cx, w[1] - cy
-    c, s = np.cos(tilt), np.sin(tilt)
-    u = dx * c + dy * s        # along the zone's width axis
-    v = -dx * s + dy * c       # along its height axis
-    return (u / (rx + pad)) ** 2 + (v / (ry + pad)) ** 2 <= 1.0
-
 
 
 def _seg_dist(p, a, b):
@@ -922,12 +871,13 @@ def _on_guard(kp, w, torso, cfg):
     return False
 
 
-def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, zones=None, outline=None):
-    """Name of the target the fist reaches (face or a body zone), else None. Falsy when nothing is hit.
+def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, body=None):
+    """"head" or "torso" when the fist reaches the opponent's face or body, else None.
 
-    Face: the ellipse from forehead and eyes down to the chin, across to the ears. Body: the
-    solar plexus, liver, spleen and core zones that face the attacker (or the camera). A contact is
-    dropped when it sits on the opponent's glove or arm, so parries and arm hits do not count.
+    Face: the ellipse from forehead and eyes down to the chin, across to the ears. Body: the one torso
+    contour (hips to shoulders, following the fighter's own silhouette) while that side faces the
+    attacker or the camera. A contact is dropped when it sits on the opponent's glove or forearm, or right
+    at a shoulder, so parries and arm and shoulder hits do not count.
     """
     for k in range(lo, min(len(wrist_xy), hi + 1)):
         w = wrist_xy[k]
@@ -944,25 +894,20 @@ def _landed(opp, opp_torso, wrist_xy, lo, hi, cfg, heads=None, zones=None, outli
             head = head_center(kp, opp_torso)
             if head is not None and np.linalg.norm(w - head) <= cfg.head_radius * opp_torso:
                 return "head"
-        facing = False
-        if zones is not None and k < len(zones):
-            for zi, name in enumerate(ZONE_NAMES):
-                z = zones[k, zi]
-                if np.isfinite(z).all() and z[5] > 0.5:
-                    facing = True
-                    if _in_zone(w, z, cfg.zone_pad * opp_torso):
-                        return name
-        if facing:
-            near_shoulder = min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso
-            poly = outline[k] if outline is not None and k < len(outline) and np.isfinite(outline[k]).all() else None
-            if poly is not None:
-                center = poly.mean(axis=0)
-                inside = _in_poly(w, center + (poly - center) * cfg.torso_scale)
-            else:
-                quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
-                inside = not np.isnan(quad).any() and _in_quad(w, quad.mean(axis=0) + (quad - quad.mean(axis=0)) * cfg.torso_scale)
-            if inside and not near_shoulder:
-                return "torso"
+        if body is not None:
+            poly, ok = body
+            if k < len(poly) and ok[k] > 0.5 and np.isfinite(poly[k]).all():
+                center = poly[k].mean(axis=0)
+                near_shoulder = min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso
+                if not near_shoulder and _in_poly(w, center + (poly[k] - center) * cfg.torso_scale):
+                    return "torso"
+        else:
+            quad = kp[[L_SHOULDER, R_SHOULDER, R_HIP, L_HIP]]
+            if not np.isnan(quad).any():
+                center = quad.mean(axis=0)
+                near_shoulder = min(np.linalg.norm(w - kp[j]) for j in (L_SHOULDER, R_SHOULDER)) <= cfg.shoulder_clear * opp_torso
+                if not near_shoulder and _in_quad(w, center + (quad - center) * cfg.torso_scale):
+                    return "torso"
     return None
 
 
@@ -980,15 +925,14 @@ def _dedupe(events, gap_s):
 def analyze_full(pairs, fps, cfg=None, start_s=0.0, girth=None):
     cfg = cfg or SparringConfig()
     if len(pairs) < 3:
-        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None, "heads": None, "zones": None, "outlines": None}
+        return {"punches": [], "stances": ["orthodox", "orthodox"], "tracks": None, "torsos": None, "leads": None, "heads": None, "bodies": None}
     tracks = [clean_track(t, fps, cfg) for t in stack_tracks(pairs)]
     torsos = [torso_length(t) for t in tracks]
     leads = [lead_series(tracks[i], tracks[1 - i], torsos[i], fps) for i in (0, 1)]
-    heads = [head_series(tracks[i], torsos[i]) for i in (0, 1)]
     girth = girth or [None, None]
+    heads = [head_series(tracks[i], torsos[i], (girth[i]['head_w'], girth[i]['head_h']) if girth[i] and 'head_w' in girth[i] else None) for i in (0, 1)]
     geos = [_frame_geometry(tracks[i], torsos[i], tracks[1 - i]) for i in (0, 1)]
-    zones = [zone_series(tracks[i], torsos[i], tracks[1 - i], girth[i], geos[i]) for i in (0, 1)]
-    outlines = [body_outline(tracks[i], torsos[i], tracks[1 - i], girth[i], geos[i]) for i in (0, 1)]
+    bodies = [body_target(tracks[i], torsos[i], tracks[1 - i], girth[i], geos[i]) for i in (0, 1)]
     stances = ["orthodox" if float(leads[i].mean()) >= 0.5 else "southpaw" for i in (0, 1)]
     punches = []
     for i in (0, 1):
@@ -1013,7 +957,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0, girth=None):
                 is_lead = (side == "left") == bool(leads[i][peak])
                 is_jab = is_lead and _arc_ratio(rel, lo, hi) <= cfg.jab_max_arc
                 in_depth = _same_depth(me, opp, peak, hi, torsos[i], cfg)
-                target = _landed(opp, torsos[1 - i], tip_xy, max(lo, peak - int(round(0.06 * fps))), hi + int(round(cfg.contact_slack_s * fps)), cfg, heads[1 - i], zones[1 - i], outlines[1 - i]) if in_depth else None
+                target = _landed(opp, torsos[1 - i], tip_xy, max(lo, peak - int(round(0.06 * fps))), hi + int(round(cfg.contact_slack_s * fps)), cfg, heads[1 - i], bodies[1 - i]) if in_depth else None
                 events.append(
                     {
                         "t": round(start_s + float(peak) / fps, 3),
@@ -1030,7 +974,7 @@ def analyze_full(pairs, fps, cfg=None, start_s=0.0, girth=None):
         punches.extend(_dedupe(events, cfg.cross_hand_gap_s))
     punches.sort(key=lambda e: e["t"])
     _resolve_mutual_landings(punches, cfg.mutual_gap_s)
-    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads, "heads": heads, "zones": zones, "outlines": outlines}
+    return {"punches": punches, "stances": stances, "tracks": tracks, "torsos": torsos, "leads": leads, "heads": heads, "bodies": bodies}
 
 
 def _resolve_mutual_landings(punches, gap_s):
