@@ -303,7 +303,7 @@ def _box_iou(a, b):
     return inter / union if union > 0 else 0.0
 
 
-def resolve_identity(pairs, min_margin=0.08, window=15, clear_iou=0.10):
+def resolve_identity(pairs, min_margin=0.08, window=15, clear_iou=0.10, weak_cue=0.22):
     """Lock fighter identity. Slot 0 is the fighter with the redder gloves and darker top.
 
     Appearance is only trusted while the fighters are apart (boxes barely overlap), because in a
@@ -326,6 +326,10 @@ def resolve_identity(pairs, min_margin=0.08, window=15, clear_iou=0.10):
         if a is not None and b is not None:
             margin[k] = a - b
     if not np.isfinite(margin).any():
+        return pairs, 0
+    # when the two fighters barely differ in gloves and tops (both in black, say) the margin is mostly
+    # noise and re-ordering on it makes the labels jump around, so keep the position tracker's own labels
+    if float(np.nanmedian(np.abs(margin))) < weak_cue:
         return pairs, 0
     # state[k] True means this frame's pair is in the wrong order
     half = window // 2
