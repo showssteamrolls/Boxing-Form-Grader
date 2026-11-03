@@ -163,12 +163,12 @@
     card.innerHTML =
       '<div class="pc-name"><span data-k="label"></span><span class="pc-stance" data-k="stance"></span></div>' +
       '<div class="pc-hero">' +
-      '<div><span class="pc-big" data-k="thrown">0</span><span class="pc-cap">thrown</span></div>' +
+      '<div><span class="pc-big" data-k="jab">0</span><span class="pc-cap">jabs</span></div>' +
       '<div><span class="pc-big" data-k="landed">0</span><span class="pc-cap">landed</span></div>' +
       '<div><span class="pc-big" data-k="rate">--</span><span class="pc-cap">land rate</span></div>' +
       "</div>" +
       '<div class="pc-stats">' +
-      '<div><b data-k="jab">0</b><span>jabs</span></div>' +
+      '<div><b data-k="thrown">0</b><span>thrown</span></div>' +
       '<div><b data-k="power">0</b><span>power</span></div>' +
       '<div><b data-k="leadShare">--</b><span>from lead hand</span></div>' +
       "</div>";
@@ -507,10 +507,10 @@
     const counts = core.countsAt(state.index, t);
     for (const id of FIGHTERS) {
       const c = counts[id];
-      setValue(cards[id], "thrown", c.thrown, true);
+      setValue(cards[id], "jab", c.jab, true);
       setValue(cards[id], "landed", c.landed, true);
       setValue(cards[id], "rate", c.rate === null ? "--" : pct(c.rate));
-      setValue(cards[id], "jab", c.jab);
+      setValue(cards[id], "thrown", c.thrown);
       setValue(cards[id], "power", c.power);
       setValue(cards[id], "leadShare", c.leadShare === null ? "--" : pct(c.leadShare));
     }
