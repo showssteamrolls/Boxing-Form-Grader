@@ -51,7 +51,7 @@ class SparringConfig:
     min_extension: float = 0.20    # the hand must travel at least this far out (torso lengths) during the punch
     burst_ratio: float = 1.5       # peak speed over the median hand speed in the second before it; waving has no burst
     glove_ext: float = 0.30        # the glove reaches this far past the wrist along the forearm, in torso lengths
-    zone_pad: float = 0.12         # glove radius added around each body zone, in torso lengths
+    zone_pad: float = 0.20         # glove radius added around each body zone, in torso lengths
 
 
 @dataclass

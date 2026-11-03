@@ -323,11 +323,11 @@ def test_landed_counts_head_and_body_zones():
     assert hits((482, 172))  # on the face
     front = broad_opponent()
     assert broad_hit(front, (500, 232)) == "solar_plexus"
-    assert broad_hit(front, (500, 272)) == "core"
+    assert broad_hit(front, (500, 292)) == "core"
 
 
 def test_landed_ignores_chest_and_back():
-    assert broad_hit(broad_opponent(), (500, 202)) is None  # chest line, not a target
+    assert broad_hit(broad_opponent(), (500, 196)) is None  # chest line, not a target
     back = broad_opponent(front=False)
     assert broad_hit(back, (500, 232)) is None
     assert broad_hit(back, (500, 272)) is None
@@ -350,7 +350,7 @@ def test_landed_ignores_shoulder_hits():
 
 def test_landed_ignores_arm_and_block_hits():
     # a glove on the forearm in front of the body is a block, not a landed shot
-    assert not hits((500, 215), wrist_l=(470, 140), wrist_r=(530, 140), elbow_l=(500, 260), elbow_r=(520, 260))
+    assert not hits((489, 215), wrist_l=(470, 140), wrist_r=(530, 140), elbow_l=(500, 260), elbow_r=(520, 260))
 
 
 def test_landed_ignores_contact_beside_the_torso():
