@@ -1,6 +1,28 @@
 {
   "spars": [
     {
+      "slug": "111826_ant_ryan_r9",
+      "title": "Ant & Ryan R9",
+      "youtube": null,
+      "video": "spars/111826_ant_ryan_r9.mp4",
+      "start": 0.0,
+      "end": 334.4,
+      "counts": {
+        "A": {
+          "thrown": 98,
+          "landed": 13,
+          "jab": 42,
+          "power": 56
+        },
+        "B": {
+          "thrown": 115,
+          "landed": 25,
+          "jab": 70,
+          "power": 45
+        }
+      }
+    },
+    {
       "slug": "110326_ant_ryan_r5",
       "title": "Ant & Ryan R5",
       "youtube": null,
