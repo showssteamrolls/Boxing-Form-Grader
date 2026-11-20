@@ -11,7 +11,7 @@
 
 .pc-head { text-align: center; }
 .pc-head h2 {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 2rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -61,7 +61,7 @@
   border: 1px solid rgba(255,255,255,0.25);
   border-radius: 0;
   padding: 5px 12px;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Montserrat', sans-serif;
   font-size: 0.7rem;
   cursor: pointer;
 }
@@ -108,19 +108,19 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.95rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--c);
 }
-.pc-stance { font-family: 'Inter', sans-serif; font-size: 0.68rem; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.4); }
+.pc-stance { font-family: 'Montserrat', sans-serif; font-size: 0.68rem; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.4); }
 .pc-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 14px; }
 .pc-hero > div { display: flex; flex-direction: column; }
 .pc-big {
   display: inline-block;
   align-self: flex-start;
-  font-family: 'Space Grotesk', monospace;
+  font-family: 'Montserrat', sans-serif;
   font-size: 3.1rem;
   font-weight: 700;
   line-height: 1;
@@ -132,7 +132,7 @@
   100% { transform: scale(1); }
 }
 .pc-cap, .pc-stats span {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -143,19 +143,19 @@
 .pc-stats div { text-align: left; }
 .pc-stats b {
   display: block;
-  font-family: 'Space Grotesk', monospace;
+  font-family: 'Montserrat', sans-serif;
   font-size: 1.2rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .pc-mid { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 100px; }
-.pc-clock { font-family: 'Space Grotesk', monospace; font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.pc-clock-cap { font-family: 'Oswald', sans-serif; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+.pc-clock { font-family: 'Montserrat', sans-serif; font-size: 1.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pc-clock-cap { font-family: 'Bowlby One', 'Montserrat', sans-serif; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
 .pc-range { margin-top: 16px; text-align: center; }
-.pc-range b { display: block; font-family: 'Space Grotesk', monospace; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.85); }
-.pc-range span { font-family: 'Oswald', sans-serif; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+.pc-range b { display: block; font-family: 'Montserrat', sans-serif; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.85); }
+.pc-range span { font-family: 'Bowlby One', 'Montserrat', sans-serif; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
 .pc-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .pc-panel {
@@ -166,7 +166,7 @@
   padding: 16px 20px 18px;
 }
 .pc-panel-title {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -176,7 +176,7 @@
   justify-content: space-between;
   align-items: baseline;
 }
-.pc-panel-title span { font-family: 'Inter', sans-serif; font-size: 0.66rem; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.35); }
+.pc-panel-title span { font-family: 'Montserrat', sans-serif; font-size: 0.66rem; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.35); }
 .pc-leadpanel { grid-column: 1 / -1; padding-bottom: 16px; }
 .pc-compare { grid-column: 1; }
 .pc-chartpanel { grid-column: 2; display: flex; flex-direction: column; }
@@ -195,7 +195,7 @@
 .pc-lead-bar i.a { width: var(--share); background: var(--a); }
 .pc-lead-bar i.b { width: calc(100% - var(--share)); background: var(--b); }
 .pc-lead-bar.idle i { opacity: 0.25; }
-.pc-lead-text { margin-top: 10px; text-align: center; font-family: 'Space Grotesk', monospace; font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pc-lead-text { margin-top: 10px; text-align: center; font-family: 'Montserrat', sans-serif; font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .pc-rows { display: flex; flex-direction: column; gap: 4px; }
 .pc-row {
@@ -214,21 +214,21 @@
 }
 .pc-row:hover { background: #17171b; }
 .pc-row.active { border-color: #34343c; background: #17171b; }
-.pc-val { font-family: 'Space Grotesk', monospace; font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.55); }
+.pc-val { font-family: 'Montserrat', sans-serif; font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.55); }
 .pc-val.a { text-align: right; }
 .pc-val.lead.a { color: var(--a); }
 .pc-val.lead.b { color: var(--b); }
 .pc-rowlabel {
   display: block;
   text-align: center;
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(255,255,255,0.6);
   margin-bottom: 5px;
 }
-.pc-rowlabel em { font-style: normal; font-family: 'Inter', sans-serif; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.33); margin-left: 6px; font-size: 0.64rem; }
+.pc-rowlabel em { font-style: normal; font-family: 'Montserrat', sans-serif; text-transform: none; letter-spacing: 0; color: rgba(255,255,255,0.33); margin-left: 6px; font-size: 0.64rem; }
 .pc-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
 .pc-bar { display: flex; height: 8px; background: #1c1c21; border-radius: 0; overflow: hidden; }
 .pc-bar.a { justify-content: flex-end; }
@@ -265,7 +265,7 @@
 .pc-picker { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .pc-picker[hidden] { display: none; }
 .pc-picker label {
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -280,7 +280,7 @@
   color: #fff;
   border: 1px solid #34343c;
   border-radius: 0;
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.95rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -312,7 +312,7 @@
   display: flex;
   align-items: center;
   padding: 0 24px;
-  font-family: 'Oswald', sans-serif;
+  font-family: 'Bowlby One', 'Montserrat', sans-serif;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.2em;
